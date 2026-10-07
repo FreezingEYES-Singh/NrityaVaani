@@ -1,6 +1,82 @@
 # Video compare feature: open issues and change history
 
-Newest round first. All issues from rounds 1–4 have a recorded resolution.
+Newest round first. All issues from rounds 1–5 have a recorded resolution.
+
+## Round 5 critic issues and how each was resolved (revision 5)
+
+**The check.** One critic re-ran the round-4 prototype on the revision-4 Phase 1 rules, extended to the full §3.2–3.6 pipeline: 105 synthetic cases, including adversarial ones (noise ×1–4, roll, yaw, hold + sweep, impostor dancing, squat dips).
+
+**Results:**
+
+| Rules | Pass |
+|---|---|
+| Revision 4 as written | 75/105 |
+| With the two validated fixes (R71, R72) | **88/105** |
+
+The prototype and both result files are now in `docs/video-compare/prototype/`.
+
+**What held:**
+- the "real movement" test, which rejected every negative case;
+- tries;
+- phases (≤ 1/20 false tips on correct takes);
+- the mirror chosen from velocities;
+- knee roll-in (no false claims even at 3–5× noise);
+- holds, when not pause-cut;
+- "no count claim" on Thattadavu-like steps.
+
+### Issues
+
+**[critical] pause-cut-before-kind**
+- **Problem:** cutting pauses first deleted whole holds (an 89%-still teacher step became empty), frozen-aramandi students, a 3 s held pose inside a sweep, and slow movement at child noise.
+- **Resolution: fixed (R71).**
+  - The step kind is decided on the uncut teacher step.
+  - Holds and posture steps are never cut.
+  - In movement steps, only still runs whose pose matches no teacher frame are cut.
+  - See 05 §3.2.
+
+**[high] skip-charge-rejects-slow-beginners**
+- **Problem:** with every skipped cell charged in full, beginners at 2–3× were rejected.
+- **Resolution: fixed (R72), validated.** Slow steps charge the mean of the covered cells plus λ. Beginners are now found at 1/1.5/2/3× with spans 0.90/1.36/1.84/2.59, and negatives are still rejected (real-movement 0.94–1.00). See 05 §3.4.
+
+**[high] m_T-is-snr**
+- **Problem:** the motion ratio flips with noise; "jitter" was undefined; up/down steps are invisible.
+- **Resolution: fixed (R73).** Noise-corrected motion with a threshold of 0.07 rad, stable across 1–4× noise; jitter defined once (residual of a 1 s robust fit); hip-height and segment-length features. See 05 §3.2, §3.3.
+
+**[high] tau-collapses-near-neutral**
+- **Problem:** τ_T ≈ 0.06 on Samapada-like steps; the take-median term depended on the walk-in.
+- **Resolution: fixed (R74).** τ_floor and τ_P are built from the feature tolerances plus 2 × jitter cost, independent of the rest of the take. See 05 §3.4, §3.5.
+
+**[high] pause-transitions-and-stillness-measure**
+- **Problem:** standing up to pause gave false tips, and per-frame speed can't separate motion from jitter.
+- **Resolution: fixed (R71).** Windowed displacement; ±1 s transitions get a neutral cost and are left unscored. See 05 §3.2.
+
+**[high] partial-reading-undefined**
+- **Problem:** getting into and out of the pose broke partial matches; range was compared with the whole step.
+- **Resolution: fixed.** The reverse query is the student's frames near some teacher frame; range is compared with the matched span; the test offset is 20°. See 05 §3.4.
+
+**[medium] noise-dependent-checks**
+- **Problem:** bobbing, "part moving" and near-straight 3D angles behaved differently as noise grew.
+- **Resolution: fixed (R75).** One jitter definition; noise-subtracted energy only on parts the teacher moves; 3D angle bias estimated and removed, or the feature skipped. See 05 §3.3.
+
+**[medium] depth-tip-blocked**
+- **Problem:** straight-legged students got no knee correction.
+- **Resolution: fixed.** The safe "bend a little, knees over toes" tip is given when the student's legs are straight and the teacher's are bent. See 05 §3.6, 03 §5.2.
+
+**Also fixed:**
+- alignment directions are de-rolled by the median torso axis;
+- bobbing is measured along the body's axis;
+- tries scan past failing candidates;
+- the dip test is dropped (it was never decisive in 80 cases).
+
+**The 6 inconsistencies between 03 and 05 are all fixed:**
+- the roll-in plane;
+- the dip-test wording;
+- the "more than 2×" wording;
+- beginner depth marked Phase 2+ only;
+- the R47 row marked as superseded;
+- the pause exception for holds and posture steps.
+
+**Still open, by design:** 17 synthetic cases still fail. They are mostly 3–4× noise (child-distance) and 15° roll. Fixes R73–R75 target them, and Phase 1 build step 1 has to make them pass, or write each one down as an accepted limit.
 
 ## Round 4 critic issues and how each was resolved (revision 4)
 

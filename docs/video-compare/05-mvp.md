@@ -1,8 +1,9 @@
 # Video compare: Phase 1 (the core path), for approval
 
 > **Status:** proposal, waiting for the user's OK. No feature code is written yet.
-> - This is **Phase 1** of the roadmap in `03-design.md` (revision 4). It is the first thing to build.
-> - It includes the round-3 and round-4 critic fixes that apply to it. `04-open-issues.md` lists them; the round-4 algorithm fixes were checked in a synthetic experiment.
+> - This is **Phase 1** of the roadmap in `03-design.md` (revision 5). It is the first thing to build.
+> - It includes the round-3, round-4 and round-5 critic fixes that apply to it, listed in `04-open-issues.md`.
+> - The round-4 and round-5 algorithm fixes were checked in a synthetic prototype, now kept in `docs/video-compare/prototype/` as the starting test suite.
 
 ---
 
@@ -52,7 +53,7 @@ A new page, **`/compare`** ("Compare with teacher"), in three steps.
 | Teacher video is long, with talking and many steps | You mark one step, and the app suggests the moving part. Only that is processed. It warns if your selection is mostly still. |
 | Your video is longer: walking in, standing, then walking out | For movement steps the teacher's step is **searched for inside your video**. For posture steps, only the frames where you're in the step's posture are used. Everything else is ignored. |
 | Slower, faster, or uneven speed | Time is stretched to line up (movement steps). Speed is reported separately, never as a posture error. If you're more than 2× off, the result says "more than 2× slower" rather than giving a precise number. |
-| Pauses (the teacher explains, you catch your breath) | Still stretches of ≥ 1.5 s are **cut out before lining up**, from both videos, and shown as "pause (not judged)". |
+| Pauses (the teacher explains, you catch your breath) | In movement steps, still stretches of ≥ 1.5 s **that aren't part of the step's own poses** are cut before lining up, from both videos, together with the standing-up and sitting-down around them. They are shown as "pause (not judged)". A pose that is held as part of the step is never cut. |
 | You did the step 3 times | Each try is found. A tip must show up in at least half of your tries. |
 | You did only part of the step | "You practised about 50% of the step. Tips cover that part." There's no speed tip for a partial practice. |
 | You did something else, or just stood there | "We couldn't find the teacher's step in your video." Standing still in the right posture doesn't count as doing a movement step. |
@@ -122,23 +123,31 @@ If fast playback isn't possible, there is one pass, and the wait is shown first.
 - Both tracks are resampled onto one 15 fps timeline.
 - **Missing or doubtful frames** (no person, wrong person, out of frame, low visibility) are masked. They get a neutral cost in the alignment and are left out of every count.
 
-### 3.2 Step kind (from the teacher's marked step)
+### 3.2 Jitter, step kind, then pauses (in that order, R5-1)
 
-- **Pauses first:**
-  - still stretches of ≥ 1.5 s are found in both videos, using a stillness threshold relative to each video's jitter;
-  - they are **cut out before anything else**, with an index map kept for playback;
-  - they are left out of speed.
-- **Hold:** if ≥ 60% of the teacher step is still.
-- **Otherwise, the motion ratio** m_T = the teacher step's cost against its own median pose ÷ its jitter cost:
-  - m_T ≥ 3 → **movement step**;
-  - m_T < 3 → **posture step**.
+**1. Jitter, defined once per video.** The residual of a robust 1 s local fit to each landmark track, as a position SD, in torso lengths. This works even when a video has no still frames. Every noise-relative threshold below uses it.
 
-In the experiment, a Thattadavu-like step scored ≈ 1, and arm-sweep or irregular steps scored much higher.
+**2. Step kind, decided on the uncut teacher step:**
+- **Motion** = the noise-corrected spread of the teacher's alignment features around their median, √(raw² − jitter²), in radians.
+  - In the round-5 experiment this was stable from 1× to 4× noise: Thattadavu-like 0.02, irregular 0.18–0.19, arms-only 0.29–0.31.
+  - The round-4 ratio m_T was a signal-to-noise ratio, so a small, noisy teacher could flip from "movement" to "posture".
+- **Hold:** if ≥ 60% of the step is still (windowed displacement, see 3) **and** motion < 0.07.
+- **Movement step:** motion ≥ 0.07 rad.
+- **Posture step:** otherwise.
+- The alignment features include **hip height ÷ torso length and segment-length ratios** (foreshortening), so up/down steps (squat dips, touching the ground, rising) count as movement. 2D directions alone can't see up/down motion.
+
+**3. Pauses, only for movement steps.**
+- **Stillness** = windowed displacement over ±0.5 s below 3 × jitter, not per-frame speed: at 15 fps, per-frame speed can't tell motion from jitter.
+- A still run of ≥ 1.5 s is cut **only if its pose is far from every teacher frame** (cost to the nearest teacher frame > τ_P, §3.5). A pose held as part of the step is never cut.
+- **The transitions into and out of a cut pause** (standing up, sitting back down) get a neutral cost for ±1 s and are left out of scoring.
+- **Holds and posture steps are never pause-cut.** Round 5 showed that cutting first deleted whole holds, frozen poses and slow movement at child-level noise.
+- Cuts keep an index map for playback, and are left out of speed.
 
 ### 3.3 Features
 
 **For alignment (movement steps):**
-- the 2D direction of 10 body segments (upper arms, forearms, thighs, shins, torso, shoulder line), weighted by visibility and the body-part switches;
+- the 2D direction of 10 body segments (upper arms, forearms, thighs, shins, torso, shoulder line), **de-rolled by the take's median torso axis** (so a tilted phone doesn't add cost), weighted by visibility and the body-part switches;
+- **hip height ÷ torso length and segment-length ratios**, for up/down movement;
 - their velocities, which decide the mirror;
 - a mirrored version swaps left and right and flips x.
 
@@ -152,37 +161,42 @@ In the experiment, a Thattadavu-like step scored ≈ 1, and arm-sweep or irregul
 | Knee spread | Knee distance ÷ hip width | 0.25 | More is fine |
 | Foot spread | Ankle distance ÷ hip width | 0.25 | Both ways |
 | Side tilt | 2D torso axis minus the hips→ankles axis | 8° | Less is fine |
-| Bobbing | Hip height relative to the lower foot ÷ torso length, spread over the span | Teacher's + max(0.03, 3 × that video's jitter) | Less is fine |
-| **Range of movement** per angle | Your 90th–10th percentile spread vs the teacher's (only where the teacher's spread ≥ 2 × tolerance) | Yours < 0.7 × the teacher's | "Move bigger / raise higher" |
-| **Part moving** (posture steps) | Motion energy per body part vs the teacher's | Yours < 0.3 × the teacher's | "Your feet hardly moved" |
-| **Knee roll-in** (absolute, never vs the teacher) | On frames with ≥ 20° of knee bend: the 3D angle between the knee's bend direction and the foot's direction (ankle → toe), both projected onto the plane across the shin–thigh line. Roll-in is claimed only if that angle points ≥ 25° inward on ≥ 40% of bent frames **and** the knee sits inside the ankle on screen. | — | Safety |
+| Bobbing | Hip height relative to the lower foot **along the body's own axis** ÷ torso length, spread over the span | Teacher's + max(0.03, 3 × that video's jitter) (jitter as defined in §3.2) | Less is fine |
+| **Range of movement** per angle | Your 90th–10th percentile spread vs **the matched teacher span's** (only where the teacher's spread ≥ 2 × tolerance) | Yours < 0.7 × the teacher's | "Move bigger / raise higher" |
+| **Part moving** (posture steps) | **Noise-subtracted** motion energy per body part vs the teacher's, **only for parts the teacher moves** (≥ 2× noise) | Yours < 0.3 × the teacher's | "Your feet hardly moved" |
+| **Knee roll-in** (absolute, never vs the teacher) | On frames with ≥ 20° of knee bend: the 3D angle between the knee's bend direction and the foot's direction (ankle → toe), both projected onto the plane perpendicular to the hip–ankle line. Roll-in is claimed only if that angle points ≥ 25° inward on ≥ 40% of bent frames **and** the knee sits inside the ankle on screen. | — | Safety |
 | Speed | Your matched duration ÷ the teacher's (pauses excluded) | outside 0.8–1.25 | The separate Timing line |
 
 - **Why the knee check is absolute:** the round-4 experiment showed that comparing the knee's sideways offset with the teacher's reads a shallow bend as "rolling in". The knee moves outward as it bends, so the old feature mixed depth with alignment.
+- **Noise bias on 3D angles:** depth noise makes near-straight joints read bent (an elbow at 175° read 164° at 3× noise). Each video's bias is estimated by applying its measured jitter to the teacher's pose (20 random draws). The bias is subtracted, and a feature whose bias exceeds half its tolerance is skipped ("not checked").
 - **View check:** body turn from the 3D shoulder line. If it differs from the teacher's by > 30°, arm height, spreads and side tilt are off.
 - **Forward lean** can't be seen from the front, so the Torso band reads "Partly checked: side tilt only".
 - All tips are labelled **"beta"** until calibration (03 §9).
 
 ### 3.4 Movement steps: finding and lining up (subsequence DTW)
 
-- **Query** = the teacher step (pauses removed). **Search space** = your video (pauses removed). Both are at 15 fps.
-- **Recurrence:** free start and end in your video. Steps (1,1), (1,2), (2,1), (1,3) and (3,1); every skipped cell is paid for, plus λ = 0.1 × median row-min(C). So speeds from ⅓× to 3× can be lined up, and the path can't hop over bad frames.
+- **Query** = the teacher step (pauses cut per §3.2). **Search space** = your video (pauses cut per §3.2). Both are at 15 fps.
+- **Recurrence:** free start and end in your video. Steps (1,1), (1,2), (2,1), (1,3) and (3,1).
+  - A (2,1) or (3,1) step (you're faster) charges each skipped teacher cell.
+  - A (1,2) or (1,3) step (you're slower) charges **the mean of your cells it covers**, plus λ = 0.1 × median row-min(C) for each extra cell.
+  - Round 5: charging every slow cell in full made slow beginners fail. The averaged charge found beginners at 1×, 1.5×, 2× and 3× with correct spans, and still rejected every negative.
 - **Normalised cost** = D ÷ (teacher frames).
-- **Was it found?** All three must hold:
-  1. **Dip:** best ≤ 0.6 × the median end-cost **outside the match (± one step length) and outside accepted tries**, when at least one step length of such frames exists.
-  2. **Absolute ceiling** (always): best ≤ τ_T = 0.5 × the cost of the teacher's step against a neutral standing pose.
-  3. **Real movement:** best ≤ 0.7 × the cost of the teacher's step against **your own frozen median pose** over the matched span. This stops "standing in the right posture" from counting as doing the step.
-  In the round-4 experiment, these rules (with 1 and 3) found tight, beginner and repeated takes, and rejected standing, waving, squats and a frozen aramandi.
-- **More tries:** block the span and search again, up to 6 times. Each try must pass the same tests and cost ≤ 1.5× the best.
+- **Was it found?** Both must hold:
+  1. **Ceiling:** best ≤ τ_T = max(0.5 × the step's cost against a neutral standing pose, **τ_floor**). τ_floor = the cost of a pose that is off by each feature's tolerance, plus 2 × your video's jitter cost. Without the floor, a near-neutral step (Samapada with arms down) had τ_T ≈ 0.06 and rejected good takes.
+  2. **Real movement:** best ≤ 0.7 × the cost of the teacher's step against **your own frozen median pose** over the matched span. In round 5 this rejected every negative case (standing, waving, squats, other moves, a frozen pose).
+  - The round-4 "dip below the costs outside the match" test is **dropped**: in 80 movement cases in round 5 it never decided an outcome.
+- **More tries:** candidates are scanned in order of cost; **a failing candidate doesn't stop the scan**. Accept up to 6 non-overlapping tries, each passing both tests and costing ≤ 1.5× the best.
 - **Partial practice:**
-  - the reverse search (your moving part inside the teacher's step) runs when nothing is found, **and also when the match is squeezed** (span < 0.75, or more than half the path steps are compressions);
+  - the reverse search runs when nothing is found **or the match is squeezed** (span < 0.75, or more than half the path steps are compressions);
+  - its query is **your frames that are within τ_P of some teacher frame** (§3.5), so getting into and out of the pose doesn't count as part of the step;
   - the reading with the lower cost per student frame wins;
-  - a partial reading reports coverage and gives no speed tip.
+  - a partial reading reports coverage, **compares range of movement against the matched teacher span only**, and gives no speed tip.
 - **Mirror:**
-  - decided on segment **velocities**;
+  - decided on segment **velocities**, after resampling the student by the matched speed (round 5: a take more than 2× faster picked the wrong mirror on raw velocities);
   - a clear win (> 10%) picks that way;
   - otherwise the **normal** way is used, and only tips that both readings agree on are kept.
 - **Every frame of yours in the matched span is scored**, against its teacher frame on the path.
+- **Speed** on the Timing line: the ratio when it is between 0.5× and 2×, otherwise "**more than 2× slower / faster**". The same wording is used in 03.
 - **Synced playback:**
   - a smoothed speed map: straight pieces of ≥ 1 s, clamped to 0.5–2×, updated at most twice a second;
   - one Play button starts both videos inside the tap;
@@ -190,7 +204,8 @@ In the experiment, a Thattadavu-like step scored ≈ 1, and arm-sweep or irregul
 
 ### 3.5 Posture steps and holds
 
-- **Posture step:** your frames whose cost to the teacher's median pose is ≤ max(τ_T, 0.6 × your video's median), in runs totalling ≥ 0.5 × the teacher's length.
+- **τ_P** = τ_floor (§3.4): the cost of a pose off by each feature's tolerance, plus 2 × your video's jitter cost. It doesn't depend on what else is in your video (round 5: the old "0.6 × your video's median" term made the same take found or not depending on a walk-in).
+- **Posture step:** your frames whose cost to the teacher's median pose is ≤ τ_P, in runs totalling ≥ 0.5 × the teacher's length.
 - **Hold:** the longest such run (≥ 1 s), then the steadiest 2 s inside it.
 - If no such frames exist: "We couldn't find you in the teacher's posture."
 - **Judged:** posture as distributions (median and 10th/90th percentiles of each feature over the found frames vs the teacher's), plus the "part moving" check.
@@ -210,7 +225,7 @@ In the experiment, a Thattadavu-like step scored ≈ 1, and arm-sweep or irregul
 
 **Safety:**
 - **knees rolling in** → "Push your knees out over your toes before going lower", and no depth tip;
-- **knee alignment not judgeable** (fewer than 1 s of bent, clearly seen frames) → no depth tip;
+- **knee alignment not judgeable** (fewer than 1 s of bent, clearly seen frames) → no "lower" tip. **But** if your legs are nearly straight (knee > 165°) while the teacher's are bent (< 150°), the safe tip "**Bend your knees a little, keeping them over your toes**" is given. Round 5: otherwise the most common beginner correction was blocked exactly when it was needed.
 - a depth tip always says "a little lower… don't force it".
 
 **Ranking and output:**
@@ -289,6 +304,7 @@ Checked in `01-research-brief.md`:
 > 1. A single-pass self-review (A1–A17).
 > 2. The round-3 critic issues that apply to Phase 1 (R1–R10).
 > 3. Round 4: four critic agents, one of which built a synthetic prototype of §3.4 and ran 20+ cases (F1–F18).
+> 4. Round 5: one critic re-ran the prototype on the revised rules (105 cases; G1–G8).
 >
 > The full round-4 issue list is in `04-open-issues.md`.
 
@@ -317,6 +333,15 @@ Checked in `01-research-brief.md`:
 | F17 | Sync by `playbackRate` of the teacher | iOS pauses one video; rates warble | One Play tap, teacher muted, smoothed rate map |
 | F18 | "Gone when you leave"; red = error | Back/forward cache restores it; red already means "unsure", and colour-blind users can't tell | `pagehide`/`pageshow` reset; ring + arrow markers; LiveChat hidden |
 
+| G1 | Cut pauses before anything else | Deleted whole holds, frozen poses, and slow movement at child noise | Decide the step kind on the uncut step. Never cut holds or posture steps. Cut only still runs that match no teacher frame, plus their transitions. |
+| G2 | Charge every skipped cell in full | Slow beginners (2–3×) were rejected | Slow steps charge the mean of the covered cells + λ (validated) |
+| G3 | m_T = cost ÷ jitter, threshold 3 | A signal-to-noise ratio: a noisy teacher flips the kind; up/down steps are invisible | Noise-corrected motion (threshold 0.07 rad, stable across 1–4× noise); hip height and segment-length features |
+| G4 | τ_T only; "0.6 × take median" for posture | τ_T ≈ 0 on near-neutral steps; results depend on the walk-in | τ_floor from the tolerances + jitter; τ_P doesn't depend on the rest of the take |
+| G5 | Per-frame stillness; cut only the still part | Jitter reads as motion; standing up to pause gave false tips | Windowed displacement; transitions ±1 s neutral and unscored |
+| G6 | Reverse search on "the moving part" | Getting into and out of the pose broke partial matches; range compared with the whole step | Query = your frames near some teacher frame; range vs the matched span |
+| G7 | Raw energy, second-difference jitter, raw 3D angles | Frozen students not caught at noise; false bobbing; elbows read bent at noise | Noise-subtracted energy on parts the teacher moves; one jitter definition; 3D angle bias estimated and removed or skipped |
+| G8 | No depth tip when knees can't be judged | Blocks the most common correction | The safe "bend a little, knees over toes" when your legs are straight and the teacher's are bent |
+
 **Known Phase 1 limits (accepted):**
 - No AI tips from YouTube links.
 - Thattadavu-type steps get posture checks only (no stamp count or timing).
@@ -333,7 +358,13 @@ Checked in `01-research-brief.md`:
 
 Each step is checked before the next.
 
-**1. Pure logic with Node tests** (`features.ts`, `align.ts`, `feedback.ts`). Start from the round-4 experiment's synthetic stick figures: a step-A (no cycle), a step-W (arms only) and a step-P (Thattadavu-like). It must pass:
+**1. Pure logic with Node tests** (`features.ts`, `align.ts`, `feedback.ts`).
+- **Start from `docs/video-compare/prototype/`**: the round-5 synthetic suite of 105 cases on three synthetic steps (A: no cycle, W: arms only, P: Thattadavu-like) at several noise levels.
+  - Run it with `ORDER=fixed SKIPW=-1 node --experimental-strip-types cases.ts`.
+  - With round-5 fixes G1 and G2 it passes **88/105** (`results-with-round5-fixes.txt`).
+  - The 17 failures are mostly 3–4× noise (child-distance) and 15° roll, which G3–G8 target.
+- Port the logic into `src/lib/compare/` as typed modules, implement G3–G8, and drive the suite to all passing. Any case that is accepted as a known limit instead is written down in this file.
+- The suite must also cover:
 - 0.6× and 1.8× stretched copies, padded → found, no tips;
 - **a tight trim** → found;
 - 3 tries → 3 found;

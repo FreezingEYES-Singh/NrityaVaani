@@ -1,9 +1,10 @@
-# Video compare feature: design (revision 4, after 4 red-team rounds)
+# Video compare feature: design (revision 5, after 5 red-team rounds)
 
 > **Status:** DRAFT, not yet approved by the user.
 > - **Revision 3** applied all 64 round-3 critic issues.
 > - **Revision 4** applies the 40 round-4 issues from four critic agents. One of them built a synthetic prototype of the Phase 1 alignment and ran 20+ cases.
 > - Where every issue went is in `04-open-issues.md`.
+> - **Revision 5** applies the round-5 check of Phase 1. One critic re-ran the prototype on the revised rules: 105 synthetic cases, now kept in `prototype/`.
 > - **Phase 1** is specified in detail in `05-mvp.md`; this file is the full roadmap.
 
 # Guru Mirror (`/compare`): revised design (round 6)
@@ -39,7 +40,7 @@ A student practises one step next to a reference, and the feedback should be som
 
 ## 0. The short answer
 
-### What changed in revisions 3 and 4
+### What changed in revisions 3, 4 and 5
 
 Round 3 showed two things:
 - **The riskiest part of the old v1 was its headline part:** the Thattadavu strike/pattern layer.
@@ -48,6 +49,11 @@ Round 3 showed two things:
 So the build order was turned around. Round 4 then **tested** the new Phase 1 alignment on synthetic stick figures, and found:
 - **Thattadavu-like steps carry no timing signal in whole-body posture:** the body holds aramandi and only the feet move a little. Phase 1 therefore sorts each marked step into a **movement step** (lined up and compared part by part), a **posture step** (posture plus "did the moving part move") or a **hold**.
 - The "was it found" test, pause handling, partial practice, per-part errors and the knee check all needed fixing. The fixes were validated in the same experiment.
+
+Round 5 re-ran the prototype on the revised rules (105 cases):
+- **What held:** the "real movement" test, phases, tries, the mirror choice and the knee roll-in check.
+- **What it fixed:** the order (step kind before pauses), slow-beginner matching, noise-proof step kinds, the ceiling floor, partial practice, and checks that were sensitive to noise.
+- **Current result:** 88/105 cases pass with the two validated fixes. The rest is Phase 1 build step 1 (`05-mvp.md` §6).
 
 | Phase | What ships | Why in this order |
 |---|---|---|
@@ -129,7 +135,7 @@ So the build order was turned around. Round 4 then **tested** the new Phase 1 al
 | **R44** | Phrase correctness = share of exact phrases | 0.95¹⁴ ≈ 0.49: correct dancers fail | **Per-strike edit rate vs the detector's measured rate**, ≥ 4 fully judged phrases, partial phrases excluded |
 | **R45** | Free-start alignment decides start foot | A wrong start is a zero-cost rotation | **Start foot only against a clock** (recorder count-in); uploads say "not checked" unless strictly confirmed |
 | **R46** | Hold = stillest 2 s | Picks the standing pause | Longest run in the target state, then the stillest 2 s in it |
-| **R47** | Safety gate on knee-over-toe angle + heel-down | Not measurable from the front; heel-down uncalibrated | **Knee alignment** = knee lateral offset vs the foot line ÷ hip width; heel-down "Not checked" |
+| **R47** | Safety gate on knee-over-toe angle + heel-down | Not measurable from the front; heel-down uncalibrated | Heel-down "Not checked"; knee measure **superseded by R61** (absolute 3D roll-in) |
 | **R48** | Reflection = x-flipped motion; overlap = suspect | Front mirrors; people behind | Both mirror geometries + opposite facing; overlap counts only at similar depth; SUSPECT_ID needs 2 track cues |
 | **R49** | A cut whenever the background moves | Handheld follow-pans | Continuous motion ≠ cut; roll per 2 s window; "handheld" preflight result |
 | **R50** | Per-user storage scope | Every demo login is id "1"; expiry never runs | **Student video is never kept.** Phase 2 crash-resume record encrypted with a tab-only key; sweep on every page |
@@ -153,6 +159,11 @@ So the build order was turned around. Round 4 then **tested** the new Phase 1 al
 | **R68** | Crash-resume key in `sessionStorage` = tab-bound | Survives reload, tab duplication and session restore | Web Lock per take + a sweep rule + a 2 h cap |
 | **R69** | Calibration ~200 takes | 22 template × stratum × fps cells | fps tiers by decimation, pooled card groups, ≥ 10 good takes per group per stratum, beta-binomial baseline; ~400 error takes |
 | **R70** | YouTube compliance = per-video Made-for-Kids | Policy III.J (child-directed clients) never decided; DPDP treats under-18s as children | A decision for you (§12); III.J notification if child-directed; operator named |
+| **R71** | Cut pauses before anything else | Deleted whole holds, frozen poses, and slow movement at child noise | Step kind first, on the uncut step; holds and posture steps never cut; cut only still runs matching no teacher frame, plus ±1 s transitions |
+| **R72** | Charge every skipped cell in full | Slow beginners rejected | Slow steps charge the mean of the covered cells + λ (validated) |
+| **R73** | Motion ratio m_T ≥ 3 | A signal-to-noise ratio; up/down steps invisible | Noise-corrected motion ≥ 0.07 rad; hip-height and segment-length features |
+| **R74** | τ_T and a take-median posture threshold | τ_T ≈ 0 on near-neutral steps; results depend on the walk-in | τ_floor and τ_P from the tolerances + jitter; the dip test dropped (never decisive) |
+| **R75** | Noise-sensitive checks | False bobbing, "part moving" blind, near-straight angles biased | One jitter definition; noise-subtracted energy; 3D angle bias removed or skipped |
 
 Remaining risks are in §13. They are accepted, not unhandled.
 
@@ -444,7 +455,7 @@ With audio off, everything still runs from pose. Audio only **confirms or adds**
 | Lane use | Cleaning |
 |---|---|
 | **Overlay (drawing the skeleton)** | `despikeTrack` → `stabiliseTrack` → `smoothTrack(1)` (looks steady) |
-| **Posture features (Phase 1+)** | MediaPipe's smoothing (`numPoses 1`) + a 3-sample median per feature. **No** despike or stabilise. Stillness, pause and bobbing thresholds are **relative to each video's jitter**, measured on its still frames, so small, far-away children don't trip them. |
+| **Posture features (Phase 1+)** | MediaPipe's smoothing (`numPoses 1`) + a 3-sample median per feature. **No** despike or stabilise. Stillness, pause and bobbing thresholds are **relative to each video's jitter**, defined once as the residual of a robust 1 s local fit (it works without still frames), so small, far-away children don't trip them. |
 | **Strike events (Phase 2, R42, R62)** | **Raw** ankle, heel and foot_index lanes from the unsmoothed `numPoses 2` bake. Despike only jumps > 0.25 m between samples, which are physically impossible. **σ_j = max(SD on raw still frames, MAD of the second difference of d on strike-run frames away from candidates)**, so noise during motion isn't underestimated. |
 
 - Gaps of ≤ 3 samples are interpolated and flagged `INTERP`. **`INTERP`, low-visibility and despiked samples are never evidence:** they mask the slots they cover (§4.1).
@@ -501,9 +512,11 @@ The pure track functions move to a three.js-free `lib/motion/track.ts`, re-expor
 ### F2. Pauses inside a step
 
 **Phase 1 (general path, R59):**
-- A pause is a run of ≥ 1.5 s where the whole body is still, with stillness measured relative to that video's jitter.
-- Pauses are **cut out of both videos before alignment**, with an index map kept for playback.
-  - Round 4 showed that keeping a pause in the alignment makes the path squeeze the step to avoid it. A 4 s student pause turned one try into two half-tries.
+- **The step kind is decided first, on the uncut teacher step** (05 §3.2, R71). **Holds and posture steps are never pause-cut.**
+- **For movement steps:**
+  - a pause is a run of ≥ 1.5 s whose windowed displacement (±0.5 s) stays below 3 × that video's jitter, **and whose pose matches no teacher frame**. A pose held as part of the step is never cut.
+  - Pauses are **cut out of both videos before alignment**, with an index map kept for playback. The ±1 s transitions around them get a neutral cost and are left out of scoring.
+  - Round 4 showed that keeping a pause in the alignment makes the path squeeze the step to avoid it. Round 5 showed that cutting before the step kind is known deletes holds.
 - Pauses are shown as "pause (not judged)", with a restore button, and are left out of speed.
 - If ≥ 60% of the teacher's step is still, it is a **hold step**, and stillness is the point (F5).
 
@@ -566,7 +579,7 @@ Round 3 found that labelling runs by the best-matching card turned the most comm
 ### F5. Hold steps (R46)
 
 A hold step is judged on the right moment:
-1. Find the frames whose state matches the step (ARAMANDI for an aramandi hold, posed arms for STANDING_HOLD). In Phase 1: frames whose cost to the teacher's median pose is ≤ max(τ_T, 0.6 × the take's median), with no step search (05 §3.5). Round 4 showed that holds sent through the step search get judged by their duration.
+1. Find the frames whose state matches the step (ARAMANDI for an aramandi hold, posed arms for STANDING_HOLD). In Phase 1: frames whose cost to the teacher's median pose is ≤ τ_P (from the tolerances and jitter), with no step search (05 §3.5). Round 4 showed that holds sent through the step search get judged by their duration.
 2. Take the **longest such run**, then the **stillest 2 s inside it**.
 
 "Stayed standing" is given only when the target state never lasts ≥ 1 s. The chosen window is shown ("judged 0:06–0:08") with "pick another moment".
@@ -592,7 +605,10 @@ A hold step is judged on the right moment:
 
 ### 4.0 Principles
 
-- **Confidence is relative, with an absolute backstop (R58).** A match must be clearly better than the alternatives in the **same take** (Phase 1: end costs **outside** the match and outside accepted tries; footwork: other phrase positions). Phase 1 also requires an absolute ceiling and a "real movement" test (05 §3.4), because a take that is mostly dance, or mostly padding, makes a whole-take median meaningless. This keeps beginners from being rejected and stops still standing from "matching".
+- **Confidence (R58, R74).**
+  - **Phase 1:** a ceiling with a tolerance-based floor, plus a "real movement" test against the student's own frozen pose (05 §3.4). A whole-take median is meaningless when a take is mostly dance or mostly padding. Round 5 found the "dip below the rest of the take" test never decided an outcome, so it was dropped.
+  - **Footwork:** relative to other phrase positions.
+  - Both keep beginners from being rejected and stop standing still from "matching".
 - **Masked frames** (no person, out of frame, occluded, SUSPECT_ID) get a **neutral cost**: the median of row minima over unmasked frames. They are excluded from normalisation and from every scoring denominator.
 - **Offsets (R53).** A constant posture offset (an arm held 15° low throughout) raises the cost everywhere, so the relative dip survives. The offset itself then becomes a tip. Per-window de-meaning **inside** the DP is not used: the window is an output of the path, so it can't be done in one pass. For the v2 chained sDTW, either:
   - align on offset-invariant features (velocities, or features high-passed over about 1 s), or
@@ -722,32 +738,29 @@ A lift that is present but below the threshold becomes a "**strike firmly**" not
 - **Confidence:** ≥ 70% of strikes matched, residual IOI CV ≤ 0.3 per section, and shape cost ≤ 0.7 × the phase-shift null.
 - Suppressed at 4×.
 
-### 4.7 The core path (Phase 1, R41, R57–R61)
+### 4.7 The core path (Phase 1, R41, R57–R61, R71–R75)
 
 The general method for **any** marked step. It is specified fully in `05-mvp.md` §3.2–3.6; in summary:
 
-1. **Pauses** (still ≥ 1.5 s, relative to each video's jitter) are cut from both videos first.
-2. **Step kind** from the teacher's step:
-   - **hold** if ≥ 60% still;
-   - otherwise **movement** if the motion ratio m_T (cost against its own median pose ÷ jitter cost) is ≥ 3;
-   - else **posture**.
-3. **Movement steps:** subsequence DTW on 2D segment directions.
-   - Steps (1,1), (1,2), (2,1), (1,3), (3,1), with skipped cells charged. Normalised cost = D ÷ N.
-   - **Found** = all of:
-     - a dip below the costs **outside** the match;
-     - an absolute ceiling τ_T = 0.5 × the step's cost against a neutral standing pose;
-     - a "real movement" test: best ≤ 0.7 × the step's cost against the student's frozen median pose.
-   - **Tries:** up to 6.
-   - **Partial:** a reverse search when nothing is found **or the match is squeezed**.
-   - **Mirror:** decided on velocities; a tie → the normal way, with only agreed tips.
-4. **Posture steps and holds:** frames close to the teacher's median pose, judged as distributions, plus a "part moving" check. No timing claims.
-5. **Feedback per phase** (the teacher step split at its velocity minima), plus range of movement.
+1. **Jitter** is defined once per video (the residual of a 1 s robust fit).
+2. **Step kind** on the uncut teacher step:
+   - **hold** if ≥ 60% still and low motion;
+   - **movement** if noise-corrected motion is ≥ 0.07 rad;
+   - otherwise **posture**.
+   Features include hip height and segment-length ratios, so up/down steps count as movement.
+3. **Pauses**, for movement steps only: still runs that match no teacher frame are cut from both videos, with their ±1 s transitions left unscored.
+4. **Movement steps:** subsequence DTW on de-rolled segment directions plus height and length ratios.
+   - Steps (1,1), (1,2), (2,1), (1,3), (3,1). Faster steps charge the skipped teacher cells; slower steps charge the mean of the covered cells + λ.
+   - **Found** = a ceiling with a tolerance-based floor **and** the "real movement" test against the student's own frozen pose.
+   - **Tries:** up to 6, scanning past failing candidates.
+   - **Partial:** a reverse search with the student's near-teacher frames as the query.
+   - **Mirror:** decided on speed-normalised velocities.
+5. **Posture steps and holds:** frames within τ_P of the teacher's median pose, judged as distributions, plus a noise-subtracted "part moving" check. No timing claims.
+6. **Feedback per phase**, plus range of movement against the matched span. 3D angle noise bias is removed, or the feature is skipped.
 
-**Evidence (round 4 synthetic experiment):**
-- the old rules rejected tight, beginner and repeated takes, and accepted another adavu and a frozen aramandi;
-- the baseline-outside-the-match, absolute-ceiling and real-movement rules fixed this on non-periodic and arm-only steps;
-- cutting pauses first gave 1 try with zero alignment error;
-- Thattadavu-like steps scored m_T ≈ 1, hence the posture kind.
+**Evidence:**
+- **Round 4 experiment:** the original rules failed; the baseline, real-movement and pause-first fixes worked on non-periodic and arm-only steps; Thattadavu-like steps carry no timing signal.
+- **Round 5 experiment** (105 cases): with R71 + R72, 88 pass. The remaining failures are at 3–4× noise and 15° roll, which R73–R75 target. The suite is in `docs/video-compare/prototype/` and is build step 1's test bed.
 
 **Known blind spot:** the stamp count and timing on footwork-in-place steps. Phase 2 exists for that.
 
@@ -798,7 +811,7 @@ The general method for **any** marked step. It is specified fully in `05-mvp.md`
 | **Height bobbing** | Mid-hip screen y relative to the planted (lower) ankle ÷ torso length, spread over the matched span; threshold = teacher's + max(0.03, 3 × that video's jitter) |
 | **Range of movement** | Per angle, the student's 90th–10th percentile spread vs the teacher's (where the teacher's ≥ 2 × tolerance); < 0.7× → "move bigger" |
 | **Part moving** (posture steps) | Motion energy per body part vs the teacher's; < 0.3× → "your feet hardly moved" |
-| Speed (movement steps only; never for partial readings) | Matched duration ÷ teacher duration, pauses excluded; "more than 2×" at the slope limit |
+| Speed (movement steps only; never for partial readings) | Matched duration ÷ teacher duration, pauses excluded; shown as a ratio between 0.5× and 2×, otherwise "more than 2× slower/faster" |
 
 **Phase 2 adds:**
 - planted hipDrop, foot-lift height and the strike pattern;
@@ -816,11 +829,11 @@ The general method for **any** marked step. It is specified fully in `05-mvp.md`
 **Safety gate on depth (R47).**
 - A "lower" tip is allowed only when **knee roll-in** was judged (≥ 1 s of bent, clearly seen frames) and not claimed, and leg reliability is good.
 - **Knees roll in:** the tip becomes "**Push your knees out over your toes before going lower**", and the depth tip is suppressed.
-- **Knees not judgeable** (saree, low reliability): no depth tip.
+- **Knees not judgeable** (saree, low reliability): no "lower" tip. **Exception:** if the student's legs are nearly straight (knee > 165°) while the reference's are bent (< 150°), the safe "Bend your knees a little, keeping them over your toes" is given (R75 / round 5).
 - A depth tip never asks for more than half the remaining gap ("a little lower").
 - **Heel-down is "Not checked"** until it is calibrated.
 
-**Beginner depth (round 3: elite reference).**
+**Beginner depth (round 3: elite reference). Phase 2+ only:** it needs stored history, and Phase 1 stores nothing.
 - Once the student is past a minimum (hipDrop ≥ 0.08 with good knee alignment), the depth target is **her own best recent depth plus a small step**, not the reference's.
 - While she is improving, depth alone can't push the Legs band below "Getting there".
 
@@ -1277,7 +1290,7 @@ Labelled "**General posture habits: not compared with a teacher.**" They run on 
 
 | Phase | Work | Size | Cut first if late |
 |---|---|---|---|
-| **1** | `/compare` page (server + client); teacher upload + step marker (suggested run, zoomed strip, sliders); frame canvas + rVFC reader + tap priming + seek fallback + two-pass scan; VIDEO/1 + IMAGE/3 identity + job queue; session-save before the camera; features; pauses + step kinds; subsequence DTW (found tests, tries, partial, mirror); posture/hold matching; phases + range of movement; gates, bands, tips, Timing line; Show me, joint markers, synced playback; ghost if time allows; NVB2 save/delete; privacy pillars + back/forward-cache reset; Navbar + LiveChat; unit tests + e2e smoke + 2 real phones | ~16 subsystems; **~2–2.5 weeks** for a student team | Ghost; saving teacher steps; two-pass scan (single pass + shown ETA) |
+| **1** | `/compare` page (server + client); teacher upload + step marker (suggested run, zoomed strip, sliders); frame canvas + rVFC reader + tap priming + seek fallback + two-pass scan; VIDEO/1 + IMAGE/3 identity + job queue; session-save before the camera; features; pauses + step kinds; subsequence DTW (found tests, tries, partial, mirror); posture/hold matching; phases + range of movement; gates, bands, tips, Timing line; Show me, joint markers, synced playback; ghost if time allows; NVB2 save/delete; privacy pillars + back/forward-cache reset; Navbar + LiveChat; unit tests (starting from the 105-case prototype suite) + e2e smoke + 2 real phones | ~16 subsystems; **~2–2.5 weeks** for a student team | Ghost; saving teacher steps; two-pass scan (single pass + shown ETA) |
 | **2** | Mediabunny reader; recorder (tap start, unlock, loop units, take length per card, remux, encrypted temp record with Web Lock, framing check); pattern cards (reviewer-settled) + practice track (noise bursts, self-test, in-tempo count-in) + 3D pane; raw-lane events (`numPoses 2`, motion σ_j, evidence-of-absence deletions); clock- or card-aware τ; cyclic DP with rests/masks over half-phrases; declared-step prior + 3-button prompt; version question after the take; start foot (recorder); steadiness vs a shuffled null; knee roll-in; minimal audio; Phase 1 tolerance re-derivation; harness; calibration (~400 error + 60 good takes, adults + children, private custody) | ~18 subsystems; ~5 weeks, recording in weeks 2–4 | Start foot; the stamp detector |
 | **3** | YouTube practise-beside (III.J first; desktop/tablet recording, phones watch-then-record; Netlify meta route); studio references (media + lanes outside git); teacher-file states, proposals, several ranges, `.nvref`; full audio policy; ladder tips; early/late with latency calibration; extra-people classes + identity + graphics; Tier B + ghost on footwork; voice; heavy tier | ~5 weeks | Voice; proposals; Tier B |
 | **v2** | Chained Tier C (Namaskaram sequences); mudras at body distance; Hindi; worker; rig references; live tips | — | — |

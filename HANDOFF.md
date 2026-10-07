@@ -42,7 +42,7 @@ cd frontend && BACKEND_URL=http://127.0.0.1:8000 NEXT_PUBLIC_BACKEND_URL=http://
 | `287aba3` | Renamed `src/middleware.ts` to `src/proxy.ts` (Next 16 deprecation; the `/checkout` login redirect still works). Fixed 10 lint warnings. Fixed the mocap 404 and layout (both now moot after the next commit). |
 | `1494ea6` | **Removed the `/mocap` page entirely**, plus the code only it used: `api/critique` (the AI review route), `lib/mocap/bakeStore.ts`, and `lib/motion/{clipStore,collide,polish,validate,critic}.ts`. Also removed `calibrateSpread` from MocapFigure, uninstalled `openai` + `@anthropic-ai/sdk`, and removed the footer link and README mentions. `MocapFigure.tsx` is KEPT: it renders the 3D dancer in the `/learn` lesson player. |
 | `bd6fef8` | `HANDOFF.md` + `docs/video-compare/01..04` (feature design research, see §4). |
-| `605aaf1`..`25cd7ca` | `05-mvp.md` (Phase 1 spec) and design revisions 3–4 (see §4). |
+| `605aaf1`..(latest) | `05-mvp.md` (Phase 1 spec), design revisions 3–5, `prototype/` (see §4). |
 
 Verified after each commit: tsc, eslint, `next build`, all 17 routes load with no console errors in headless Chromium, and the lesson player still plays and responds to its camera presets.
 
@@ -93,15 +93,18 @@ A multi-agent design run: 4 research agents → 4 competing designs → 3 judges
 3. Fix the 5 critical issues in whatever survives the cut.
 4. **Present the solution + decisions (03-design.md §12) to the user and wait for approval before writing code.**
 
-### UPDATE (session 2): revisions 3 and 4 done; round-5 check of Phase 1 in progress
-- **Revision 3** (`eea5153`) applied all 64 round-3 issues and re-cut the phases:
-  - **Phase 1** = the general core path for any teacher video file;
-  - **Phase 2** = Thattadavu footwork;
-  - **Phase 3** = YouTube and the rest.
-- **Round 4:** four critic agents (Phase 1 algorithm with a synthetic prototype; Phase 1 engineering; Phase 2; Phase 3, legal and completeness) found 40 issues (5 critical).
-- **Revision 4** (`25cd7ca`) applied all 40. They are listed with resolutions at the top of `04-open-issues.md`. The biggest change: Phase 1 sorts steps into movement / posture / hold, because Thattadavu-like steps carry no timing signal in whole-body posture.
-- **Round 5:** one critic agent re-runs the prototype against the revised Phase 1 rules. Its fixes go into `05-mvp.md` + 03, recorded as "Round 5" in 04.
-- **Then:** present 03 §0 + §12 (9 decisions) to the user. **No feature code until the user approves.** Phases 2 and 3 get their own critic rounds before they are built.
+### UPDATE (session 2): design process complete (revision 5); waiting for the user's approval
+| Step | Commit | What |
+|---|---|---|
+| Revision 3 | `eea5153` | Applied all 64 round-3 issues. Phases re-cut: Phase 1 = the general core path for any teacher video file; Phase 2 = Thattadavu footwork; Phase 3 = YouTube and the rest. |
+| Round 4 | — | 4 critic agents found 40 issues (5 critical). |
+| Revision 4 | `25cd7ca` | Applied them. |
+| Round 5 | — | 1 critic re-ran the prototype on Phase 1: 8 issues (1 critical). |
+| Revision 5 | (this commit) | Applied them. |
+
+- **Records:** every issue and its resolution is in `04-open-issues.md`, newest round first.
+- **Prototype:** the 105-case synthetic suite is in `docs/video-compare/prototype/` (88/105 pass with the validated fixes) and is Phase 1 build step 1's test bed.
+- **What to show the user:** 03 §0 + §12 (9 decisions). **No feature code until they approve.** Phases 2 and 3 get their own critic rounds before they are built.
 
 ### Prompt to start the next session
-> Read HANDOFF.md and docs/video-compare/ (03-design.md, 04-open-issues.md, 05-mvp.md) on branch claude/relaxed-fermat-ctr4u2. If the round-5 critic results aren't in 04-open-issues.md yet, finish that step first. If I've approved, build Phase 1 in the order in 05-mvp.md §6, verifying each step (tests, tsc, eslint, build, headless browser). Otherwise show me the solution and decisions again.
+> Read HANDOFF.md and docs/video-compare/ (03-design.md, 04-open-issues.md, 05-mvp.md) on branch claude/relaxed-fermat-ctr4u2. If I've approved, build Phase 1 in the order in 05-mvp.md §6, verifying each step (tests, tsc, eslint, build, headless browser). Otherwise show me the solution and decisions again.
