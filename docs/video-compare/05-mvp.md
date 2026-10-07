@@ -1,171 +1,272 @@
 # Video compare: Phase 1 (the core path), for approval
 
 > **Status:** proposal, waiting for the user's OK. No feature code is written yet.
-> - This is **Phase 1** of the roadmap in `03-design.md` (revision 3). It is the first thing to build.
-> - It includes the round-3 fixes that apply to it; `04-open-issues.md` lists them.
+> - This is **Phase 1** of the roadmap in `03-design.md` (revision 4). It is the first thing to build.
+> - It includes the round-3 and round-4 critic fixes that apply to it. `04-open-issues.md` lists them; the round-4 algorithm fixes were checked in a synthetic experiment.
 
 ---
 
 ## 1. The short answer
 
-A new page, **`/compare`** ("Compare with teacher"), in three steps:
+A new page, **`/compare`** ("Compare with teacher"), in three steps.
 
-1. **Teacher video.** Upload a video file. Drag two handles to mark the one step you want to practise (2–60 s). It starts as 30 s around where you paused, and the time it will take is shown as you drag.
-   The app finds the body in every frame **on your device** and draws the stick figure on the teacher video.
-2. **Your video.** Upload your practice video, or on a phone tap "Record" (this opens the phone's own camera). Any length up to 3 minutes.
-   Extra bits at the start and end, pauses, doing the step several times, or a different speed are all fine.
-3. **Result.** Both videos side by side with stick figures, played in sync: the app lines up your moves with the teacher's.
-   - Up to **3 corrections** and **1 thing you did well**.
-   - A band for Arms, Legs, Torso and Timing, with a "Not checked" note where something couldn't be judged.
-   - Each tip has **"Show me"**: both videos pause at the worst moment, with the joint red on you and green on the teacher.
-   - A **"Ghost"** switch draws the teacher's stick figure on top of your body.
+**1. Teacher video.**
+- Upload a video file and mark the one step you want to practise (2–60 s):
+  - a zoomed strip;
+  - "Start here" / "End here" buttons at the playhead;
+  - ±0.5 s nudges;
+  - "Play selection".
+- The app suggests the moving part around where you paused.
+- The app finds the body in every frame **on your device** and draws the stick figure on the teacher video.
 
-**YouTube** can't be done the way it was asked (§4). It is not in Phase 1. In Phase 3 it becomes "practise beside": the YouTube video plays untouched next to your video with your stick figure, but there are no AI tips from it.
+**2. Your video.**
+- Two buttons:
+  - **"Choose a video"**: any video from your phone or computer;
+  - **"Record"** (phones only): opens the phone's own camera.
+- Before the camera opens, the teacher step is saved for this session, so it isn't lost if the phone reloads the page.
+- Extra bits at the start and end, pauses, doing the step several times, or a different speed are all fine.
+
+**3. Result.**
+- Both videos side by side with stick figures. One Play button starts both, lined up with each other.
+- Up to **3 corrections** and **1 thing you did well**, plus a separate **Timing** line.
+- A band for Arms, Legs, Torso and Timing, with a "Not checked" note where something couldn't be judged.
+- Each tip has **"Show me"**: both videos pause at the worst moment, and the joint is marked with a ring and an arrow on you (and on the teacher).
+- If time allows, a **"Ghost"** switch draws the teacher's stick figure over your body.
+
+**YouTube** can't be done the way it was asked (§4), so it's not in Phase 1. Decision 2 offers either a watch-only YouTube player soon after Phase 1, or the full "practise beside" mode in Phase 3. Neither compares you with the YouTube video itself.
 
 ---
 
 ## 2. How it handles "not all movement is necessary, different lengths"
 
+**The app first decides what kind of step the teacher marked** (from the teacher video alone):
+
+| Step kind | Example | How you're compared |
+|---|---|---|
+| **Movement step**: the body moves clearly | Natta adavu arm sweeps, Namaskaram "Saluting around", most choreography | Your moves are **searched for and lined up** with the teacher's (stretching time), then compared part by part |
+| **Posture step**: the posture stays and only small parts move | Thattadavu (aramandi + stamps), Tapping | Your **posture** while doing the step is compared. You're also told if a part that should move barely moved ("your feet hardly moved"). **The count and timing of stamps are not checked in Phase 1** (that is Phase 2). |
+| **Hold**: mostly still | Samapada, an aramandi hold, Guru Vandana | Your steadiest 2 s **in the teacher's posture** are compared |
+
 | Problem | What Phase 1 does |
 |---|---|
-| Teacher video is long, has talking, has many steps | You **mark one step**. Only that part is processed. |
-| Your video is longer: walking to your spot, standing, dancing, walking to the phone | The app **searches for the teacher's step inside your video**. Anything before and after the match is ignored. |
-| You dance slower, faster, or speed up and slow down | Time is **stretched** (DTW) so the same moves line up. Your overall speed becomes its own Timing tip. |
-| You did the step 3 times | Each try is found. A tip must show up in **at least half of your tries**. |
-| You did only part of the step | "You practised about 50% of the step. Tips cover that part." |
-| You did something else, or just stood there | The match must be **clearly better than the rest of your video** (a relative test, so beginners aren't rejected). Otherwise: "We couldn't find the teacher's step in your video", and no wrong tips. |
-| The teacher stops to explain inside the step, or you stop to catch your breath | A still pause of ≥ 1.5 s inside a moving step is **left out of scoring** and shown as "pause (not judged)". |
-| A hold step (Samapada, an aramandi hold) | The longest run where you're in the teacher's posture is used, then the steadiest 2 s in it, not the moment you stood waiting. |
-| The teacher moves things that don't matter | **Switch body parts off** (Arms, Legs, Torso, Head). A difference must last **at least 40% of the step**. |
-| You mirror the teacher (or the phone mirrors your video) | Tried both normal and mirrored. Tips point at the **joint on screen** in colour, never "left/right". |
-| Child vs adult, near vs far | Everything is angles and ratios, so size and distance cancel out. |
-| Different camera angle | If your body's turn differs from the teacher's by > 30°, the tips that depend on the view are switched off, and you're told why. |
-| Phone held by hand, slightly tilted | The tilt-based features are measured relative to your own legs, so a tilted camera cancels out. |
-| Saree hides the knees, body leaves the frame, someone walks past | Those frames or joints are **not judged**, and the result says what wasn't checked and why. |
-
-**The one thing Phase 1 can't see:** a wrong **number** of stamps or taps inside a repeating step (an extra stamp looks like slower dancing). Phase 2 adds a strike-count check for Thattadavu.
+| Teacher video is long, with talking and many steps | You mark one step, and the app suggests the moving part. Only that is processed. It warns if your selection is mostly still. |
+| Your video is longer: walking in, standing, then walking out | For movement steps the teacher's step is **searched for inside your video**. For posture steps, only the frames where you're in the step's posture are used. Everything else is ignored. |
+| Slower, faster, or uneven speed | Time is stretched to line up (movement steps). Speed is reported separately, never as a posture error. If you're more than 2× off, the result says "more than 2× slower" rather than giving a precise number. |
+| Pauses (the teacher explains, you catch your breath) | Still stretches of ≥ 1.5 s are **cut out before lining up**, from both videos, and shown as "pause (not judged)". |
+| You did the step 3 times | Each try is found. A tip must show up in at least half of your tries. |
+| You did only part of the step | "You practised about 50% of the step. Tips cover that part." There's no speed tip for a partial practice. |
+| You did something else, or just stood there | "We couldn't find the teacher's step in your video." Standing still in the right posture doesn't count as doing a movement step. |
+| The teacher's incidental movement | Switch body parts off (Arms, Legs, Torso, Head). |
+| Mirroring | Tried both ways. Without strong evidence the normal way is used, and only tips both ways agree on are given. Tips point at the joint on screen, never "left/right". |
+| Child vs adult; near vs far | Angles and ratios, so size and distance cancel out. Noise limits are measured per video, so a small, far-away child doesn't get false "bouncing" or "not still" readings. |
+| Different camera angle; a tilted phone | View-dependent tips switch off when the angles differ by > 30°. Tilt cancels out because things are measured relative to your own body. |
+| Saree hides the knees; someone walks past; you bend down or turn | Those frames or joints are not judged, and the result says why. The dancer is found again after a turn or bend. |
 
 ---
 
 ## 3. How it works (technical)
 
-### 3.1 Extraction (on the device, nothing uploaded)
+### 3.1 Extraction (on the device; nothing uploaded)
 
-- **Model:** MediaPipe **PoseLandmarker** (`@mediapipe/tasks-vision` 0.10.34, already installed), the `full` model. GPU, with an automatic CPU fallback checked on a known-good test image. VIDEO mode, `numPoses: 2`.
-- **Frame reading:**
-  - the video plays muted, and `requestVideoFrameCallback` gives each frame with its exact `mediaTime`;
-  - the model runs on as many frames as the device can handle;
-  - if fewer than 10 frames per video-second are processed, playback slows to 0.5×, then 0.25×;
-  - fallback: a seek loop (the old `/mocap` loop, commit `287aba3`).
-- **One job at a time:** a small queue runs the teacher step, then your take. Timestamps never go backwards: each new video starts 10 s past the last stamp, which also resets the model's smoothing without rebuilding it.
-- **Which person:**
-  - start with the biggest, most central body whose ankles are in frame;
-  - then follow the body nearest the last position **with a similar size** (box height within 25%) and **the same facing** (so a mirror reflection never takes over);
-  - warn when a second person **of similar size and foot height** is present for ≥ 20% of frames. Smaller people standing behind are ignored.
-- **Out of frame:** landmarks outside the frame edges (2%) are not judged.
-- **No heavy cleaning:** only MediaPipe's built-in smoothing and a 3-frame median per feature. The mocap clean-up filters (`despikeTrack`/`stabiliseTrack`) erase quick foot lifts, so they are used only to draw a steady skeleton.
-- **Resampling:** both tracks go onto one 15 fps timeline.
-- **Missing frames:** frames with no person or low visibility are **masked**. They get a neutral cost in the alignment and are left out of every scoring count.
+**Models** (`@mediapipe/tasks-vision` 0.10.34, already installed; the `full` pose model):
+- **Main pass:** VIDEO mode with `numPoses: 1`.
+  - MediaPipe's **landmark smoothing only runs with `numPoses: 1`**: `pose_landmarker_graph.cc` enables it only for a single pose. With 2 there would be no smoothing at all.
+  - With 1, it also runs the person detector only when tracking is lost, which is faster.
+- **Identity pass:** IMAGE mode with `numPoses: 3`, about once a second (Phase 1 only uses it for checking people):
+  - it finds other people for the warning;
+  - it checks that the main pass is still on the chosen dancer, and masks frames where it isn't.
 
-### 3.2 Features
+**Choosing and keeping the dancer.**
+- **Start:** the biggest, most central body. Ankles must be in frame only when Legs is switched on.
+- **Same dancer** means all of:
+  - hip-centre continuity;
+  - a box height within a tolerance that **grows with the time since she was last seen**;
+  - facing (front / side / back) changing only through side. The facing rule applies only when ≥ 2 people are present.
+- **Lost for > 1 s:** re-pick the biggest central body. Bends (muzhumandi) and turns (Saluting around) therefore don't lose her for good.
+- **Warning** when a second person at **similar depth** (box height within 25%, feet at a similar height) is present for ≥ 20% of the time. People smaller and higher in the frame are behind her and are ignored.
 
-**For alignment:** the 2D direction of 10 body segments (upper arms, forearms, thighs, shins, torso, shoulder line) as unit vectors. Each segment is weighted by how clearly it was seen and by the body-part switches. A mirrored version swaps left and right and flips x.
+**Frames.**
+- Each frame is drawn into **our own canvas, ≤ 960 px** on the long side. This applies the video's rotation and stops 4K frames being uploaded to the GPU at full size.
+- That canvas is what the model sees. We pass our own WebGL canvas, so a **lost GPU context** is caught and the model is recreated, instead of silently reading "no person".
+- **Before processing**, the app checks:
+  - the video has a width and a non-blank frame within 3 s; otherwise "Your phone saved this in a format this browser can't play";
+  - the first real frame passes the GPU check (otherwise CPU);
+  - the detected body is upright (otherwise retry with a rotation).
 
-**For tips (per frame):**
+**Reading frames, and iPhone rules.**
+- Every `play()` is **primed inside a tap**: "Prepare" and "Analyse my video" each call `play()` then `pause()` on their video element before any `await`.
+  - iPhones in Low Power Mode, or hot, refuse `play()` without a tap (WebKit), so "Analyse my video" is its own tap.
+- **Reading:**
+  - the video plays muted, and `requestVideoFrameCallback` gives each frame and its `mediaTime`;
+  - if fewer than 10 frames per video-second get processed, it slows to 0.5×, then 0.25×;
+  - if `play()` is refused or the video pauses by itself, it switches to the **seek loop** and shows "Tap to continue".
+- **Seek loop:** wait for `seeked` **and a newly presented frame**. If that doesn't arrive in time, the sample is dropped, never labelled with the wrong time.
+- **Timestamps** always increase, and each new video starts 10 s past the last one.
+- **One job at a time**, in a queue.
+- The Wake Lock is re-requested whenever the tab becomes visible again. Processing pauses while the tab is hidden.
+
+**Your video in two passes** (so a 3-min take isn't a 10-min wait):
+1. **Quick scan** at about 5 samples per video-second, using faster playback when the device keeps up, to find where the step is.
+2. **Full rate** only on the found parts ± 2 s.
+
+If fast playback isn't possible, there is one pass, and the wait is shown first.
+
+**Wait estimate:**
+- the download size is always shown the first time (~21 MB);
+- the ETA comes from the download plus a short speed test on the first real frames, not from guesses while dragging.
+
+**Cleaning.**
+- MediaPipe's own smoothing, plus a 3-frame median per feature.
+- Each video's **jitter is measured on its own still frames**, and every stillness or bobbing threshold is relative to that jitter.
+- The mocap clean-up filters are used only to draw a steady skeleton.
+- Both tracks are resampled onto one 15 fps timeline.
+- **Missing or doubtful frames** (no person, wrong person, out of frame, low visibility) are masked. They get a neutral cost in the alignment and are left out of every count.
+
+### 3.2 Step kind (from the teacher's marked step)
+
+- **Pauses first:**
+  - still stretches of ≥ 1.5 s are found in both videos, using a stillness threshold relative to each video's jitter;
+  - they are **cut out before anything else**, with an index map kept for playback;
+  - they are left out of speed.
+- **Hold:** if ≥ 60% of the teacher step is still.
+- **Otherwise, the motion ratio** m_T = the teacher step's cost against its own median pose ÷ its jitter cost:
+  - m_T ≥ 3 → **movement step**;
+  - m_T < 3 → **posture step**.
+
+In the experiment, a Thattadavu-like step scored ≈ 1, and arm-sweep or irregular steps scored much higher.
+
+### 3.3 Features
+
+**For alignment (movement steps):**
+- the 2D direction of 10 body segments (upper arms, forearms, thighs, shins, torso, shoulder line), weighted by visibility and the body-part switches;
+- their velocities, which decide the mirror;
+- a mirrored version swaps left and right and flips x.
+
+**For tips:**
 
 | Feature | Measured from | Tolerance | Kind |
 |---|---|---|---|
 | Knee bend L/R | 3D angle hip–knee–ankle | 15° | More bend is fine (never praised) |
-| **Knee alignment** | Knee's sideways offset from the line of its foot (ankle → toe), ÷ hip width | 0.15 | Rolling in is bad |
 | Elbow bend L/R | 3D angle shoulder–elbow–wrist | 20° | Both ways |
-| Arm height L/R | 2D angle of the upper arm **from the torso** | 15° | Both ways |
-| Knee spread (turn-out) | Knee distance ÷ hip width | 0.25 | More is fine |
+| Arm height L/R | 2D angle of the upper arm from the torso | 15° | Both ways |
+| Knee spread | Knee distance ÷ hip width | 0.25 | More is fine |
 | Foot spread | Ankle distance ÷ hip width | 0.25 | Both ways |
-| **Side tilt** | 2D torso axis **minus** the hips→ankles axis (camera tilt cancels) | 8° | Less is fine |
-| Bobbing ("stay at the same height") | Hip height relative to the lower foot ÷ torso length, spread over the step | 1.5× the teacher's + 0.03 | Less is fine |
-| Speed | Your matched duration ÷ the teacher's | outside 0.8–1.25 | Informational |
+| Side tilt | 2D torso axis minus the hips→ankles axis | 8° | Less is fine |
+| Bobbing | Hip height relative to the lower foot ÷ torso length, spread over the span | Teacher's + max(0.03, 3 × that video's jitter) | Less is fine |
+| **Range of movement** per angle | Your 90th–10th percentile spread vs the teacher's (only where the teacher's spread ≥ 2 × tolerance) | Yours < 0.7 × the teacher's | "Move bigger / raise higher" |
+| **Part moving** (posture steps) | Motion energy per body part vs the teacher's | Yours < 0.3 × the teacher's | "Your feet hardly moved" |
+| **Knee roll-in** (absolute, never vs the teacher) | On frames with ≥ 20° of knee bend: the 3D angle between the knee's bend direction and the foot's direction (ankle → toe), both projected onto the plane across the shin–thigh line. Roll-in is claimed only if that angle points ≥ 25° inward on ≥ 40% of bent frames **and** the knee sits inside the ankle on screen. | — | Safety |
+| Speed | Your matched duration ÷ the teacher's (pauses excluded) | outside 0.8–1.25 | The separate Timing line |
 
-- The tolerances start as fixed numbers above MediaPipe's normal jitter, and are tuned by the tests in §6. **All tips are labelled "beta"** until Phase 2 calibration (which includes children).
+- **Why the knee check is absolute:** the round-4 experiment showed that comparing the knee's sideways offset with the teacher's reads a shallow bend as "rolling in". The knee moves outward as it bends, so the old feature mixed depth with alignment.
 - **View check:** body turn from the 3D shoulder line. If it differs from the teacher's by > 30°, arm height, spreads and side tilt are off.
-- **Forward lean can't be seen from the front,** so the Torso band reads "Partly checked: side tilt only".
+- **Forward lean** can't be seen from the front, so the Torso band reads "Partly checked: side tilt only".
+- All tips are labelled **"beta"** until calibration (03 §9).
 
-### 3.3 Alignment: subsequence DTW
+### 3.4 Movement steps: finding and lining up (subsequence DTW)
 
-- **Query** = the teacher's marked step. **Search space** = your whole video.
-- **Recurrence:** free start and end in your video; each time-stretch step pays its skipped cell plus a small penalty, so the path can't hop over bad frames or freeze on one frame:
-  ```
-  D(n,m) = C(n,m) + min( D(n-1,m-1),
-                         D(n-1,m-2) + 0.5·C(n,m-1) + λ,
-                         D(n-2,m-1) + C(n-1,m)   + λ ),   λ = 0.1 · median row-min(C)
-  ```
-- **Cost:** the weighted distance between segment directions. At 15 fps the grid is about 900 × 2700 cells, well under 0.1 s on desktop. On phones the loop yields to keep the page responsive.
-- **Was it found?**
-  - The best match cost must be **≤ 0.6× the typical cost** along your video (a clear dip).
-  - The span must be 0.4–2.5× the teacher's length, and the teacher step ≥ 2 s.
-  - The test is relative, so a rough beginner attempt is still found, but standing still or a different step is not. A constant offset (an arm held low throughout) raises every cost equally, so it is still found, and the offset becomes a tip.
-- **More tries:** block the found span and search again, up to 6 times. Each try must pass the same test and cost ≤ 1.5× the best one.
-- **Partial practice:** if nothing is found, search for your moving part inside the teacher's step and report the coverage.
-- **Mirror:** run both normal and mirrored, and keep the lower cost. Within 10% (a symmetric step) → no side claim.
-- **Every one of your frames in the matched span is scored,** each against its nearest teacher frame on the path.
-- **Sync playback** uses the path. Your video drives the clock, and the teacher video's speed is nudged to follow (it jumps if it drifts by more than 0.25 s).
+- **Query** = the teacher step (pauses removed). **Search space** = your video (pauses removed). Both are at 15 fps.
+- **Recurrence:** free start and end in your video. Steps (1,1), (1,2), (2,1), (1,3) and (3,1); every skipped cell is paid for, plus λ = 0.1 × median row-min(C). So speeds from ⅓× to 3× can be lined up, and the path can't hop over bad frames.
+- **Normalised cost** = D ÷ (teacher frames).
+- **Was it found?** All three must hold:
+  1. **Dip:** best ≤ 0.6 × the median end-cost **outside the match (± one step length) and outside accepted tries**, when at least one step length of such frames exists.
+  2. **Absolute ceiling** (always): best ≤ τ_T = 0.5 × the cost of the teacher's step against a neutral standing pose.
+  3. **Real movement:** best ≤ 0.7 × the cost of the teacher's step against **your own frozen median pose** over the matched span. This stops "standing in the right posture" from counting as doing the step.
+  In the round-4 experiment, these rules (with 1 and 3) found tight, beginner and repeated takes, and rejected standing, waving, squats and a frozen aramandi.
+- **More tries:** block the span and search again, up to 6 times. Each try must pass the same tests and cost ≤ 1.5× the best.
+- **Partial practice:**
+  - the reverse search (your moving part inside the teacher's step) runs when nothing is found, **and also when the match is squeezed** (span < 0.75, or more than half the path steps are compressions);
+  - the reading with the lower cost per student frame wins;
+  - a partial reading reports coverage and gives no speed tip.
+- **Mirror:**
+  - decided on segment **velocities**;
+  - a clear win (> 10%) picks that way;
+  - otherwise the **normal** way is used, and only tips that both readings agree on are kept.
+- **Every frame of yours in the matched span is scored**, against its teacher frame on the path.
+- **Synced playback:**
+  - a smoothed speed map: straight pieces of ≥ 1 s, clamped to 0.5–2×, updated at most twice a second;
+  - one Play button starts both videos inside the tap;
+  - the teacher is muted by default, with a "Sound: mine / teacher's" toggle (iPhones won't play two videos with sound).
 
-### 3.4 Feedback rules
+### 3.5 Posture steps and holds
 
-For each feature, over every matched frame pair (excluding pauses and masked frames): difference = you − teacher.
+- **Posture step:** your frames whose cost to the teacher's median pose is ≤ max(τ_T, 0.6 × your video's median), in runs totalling ≥ 0.5 × the teacher's length.
+- **Hold:** the longest such run (≥ 1 s), then the steadiest 2 s inside it.
+- If no such frames exist: "We couldn't find you in the teacher's posture."
+- **Judged:** posture as distributions (median and 10th/90th percentiles of each feature over the found frames vs the teacher's), plus the "part moving" check.
+- **Not done:** the speed tip, tries, or path playback. Playback lines up the starts.
+- The result shows: "Footwork count and timing aren't checked yet."
+
+### 3.6 Feedback rules
+
+- **Phases:** the teacher's step is split into phases at its velocity minima (0.5–2 s each). Posture and hold steps count as one phase.
+- For each feature and phase, over the matched frame pairs (pauses and masked frames excluded): difference = you − teacher.
 
 **A correction fires only if all of these hold:**
-- the median difference is beyond the tolerance, in the bad direction for one-sided features;
-- the same direction holds for ≥ 40% of judged frames;
-- the joints were clearly seen (visibility ≥ 0.6) in ≥ 70% of frames;
-- it shows up in at least half of your tries (when there's more than one);
-- the view-angle gate passed (for 2D features).
+- in at least one phase, the median difference is beyond the tolerance (in the bad direction for one-sided features); **or** the range-of-movement or part-moving check fails;
+- the joints were clearly seen (visibility ≥ 0.6) in ≥ 70% of those frames;
+- it shows up in at least half of your tries;
+- the view gate passed (2D features).
 
 **Safety:**
-- **knees rolling in** → "Push your knees out over your toes before going lower", and **no depth tip**;
-- **knees not clearly seen** → no depth tip;
+- **knees rolling in** → "Push your knees out over your toes before going lower", and no depth tip;
+- **knee alignment not judgeable** (fewer than 1 s of bent, clearly seen frames) → no depth tip;
 - a depth tip always says "a little lower… don't force it".
 
 **Ranking and output:**
-- Severity = (|median difference| ÷ tolerance) × share of time.
-- Top 3, one per body part.
-- **Strength:** the clearly seen body part closest to the teacher (under half the tolerance). "More is fine" features are never praised.
-- **Bands** for Arms / Legs / Torso / Timing: **Close match** / **Getting there** / **Needs work**. There is no % score. A band is never better than "Getting there" when a tip from that part is shown, and "Partly checked: …" lists what wasn't judged.
+- Severity = (|median difference| ÷ tolerance) × the share of the step's time in failing phases.
+- Top 3, one per body part. **Timing is a separate line**, never one of the 3.
+- **Strength:** a clearly seen body part within half the tolerance **in every phase**. "More is fine" features are never praised.
+- **Bands** for Arms / Legs / Torso / Timing: Close match / Getting there / Needs work. There is no % score. A band is never better than "Getting there" when a tip from that part is shown. "Partly checked: …" lists what wasn't judged.
 - A standing line: "**If your teacher says otherwise, follow your teacher.**"
 
 **Example wording:**
+- "Raise your arms higher: at the top of the sweep they reach about two thirds of the teacher's height." (range of movement)
 - "Bend your knees a little more. Sit lower into aramandi, keeping your knees out over your toes; don't force it."
-- "Raise this arm (shown in red) to the teacher's height."
-- "Keep your body upright; you're leaning to one side."
-- "Stay at the same height: your hips bounce on each step; the teacher's stay level."
-- "You're about 30% slower than the teacher. Practising slowly is fine; speed up when you're comfortable."
+- "Your feet hardly moved; this step has footwork. Practise it with the stamps." (posture step)
+- "Stay at the same height: your hips bounce while the teacher's stay level."
+- Timing: "About 30% slower than the teacher. Practising slowly is fine; speed up when you're comfortable."
 
-### 3.5 Privacy and storage
+**Marking joints:** a thick highlighted limb, a ring and a direction arrow, so it doesn't rely on colour. Joints the model isn't sure about are drawn faded, never red.
+
+### 3.7 Privacy and storage
 
 - **No video or frame ever leaves the device.**
-- **Your videos and results are not saved at all.** They live in memory and are gone when you leave the page. This fixes round-3 critical issue 4: every demo login shares user id "1", so "per-user" storage of children's videos was meaningless.
-- The **teacher step's stick-figure data** can optionally be saved on this device ("Save this teacher step"), so it isn't processed again. "Delete saved steps" is on `/compare` and `/privacy`. It holds landmarks only, never video.
-- **`/privacy` gets two lines:**
-  - "Videos you use in Compare are processed on this device. They are never uploaded, and your own videos are never saved."
-  - "Model files are downloaded from Google and jsDelivr; no video or images are sent." (Removed if we self-host them; decision 6.)
+- **Your videos and results are not saved by NrityaVaani.** They live in memory only.
+  - Object URLs are released when you leave `/compare` (also on in-app navigation).
+  - On `pagehide` everything is cleared.
+  - If the browser restores the page from its back/forward cache, it starts again at step 1. So the next person on a shared phone can't press Back and see your take.
+- **Teacher step data:**
+  - saved for the session automatically before the camera opens (so a reload doesn't lose it), then deleted;
+  - kept longer only if you tap "Save this teacher step";
+  - the saved key is a fingerprint (size, duration, dimensions, hash of the first and last 1 MB, the marked range), so it is found again even if the phone hands over a fresh copy of the file;
+  - "Delete saved steps" is on `/compare` and `/privacy`;
+  - landmarks only, never video.
+- **`/privacy` changes:**
+  - "Videos you use in Compare are processed on this device and never uploaded. NrityaVaani never saves your own videos. If you record with your phone's camera, the camera app may keep its own copy in your gallery; delete it there if you want."
+  - "Model files are downloaded from Google and jsDelivr when you use the camera or video features; no video or images are sent." (Removed if we self-host; decision 6.)
+  - The "No Recording or Surveillance" pillar is reworded so it stays true next to a "Record" button: "Nothing is recorded unless you choose to, and recordings never leave your device."
 
-### 3.6 Files
+### 3.8 Files
 
 New unless noted:
 
 | File | What |
 |---|---|
-| `src/app/compare/page.tsx` | The page (client component) |
-| `src/components/compare/VideoPanel.tsx` | `<video>` + skeleton canvas + ghost + red/green joint highlight |
-| `src/components/compare/TrimBar.tsx` | Two-handle step marker with a live ETA |
-| `src/components/compare/Results.tsx` | Bands, "Not checked" notes, tips, "Show me", switches |
-| `src/lib/compare/extract.ts`, `queue.ts` | Model, frame reading, person following, one job at a time |
-| `src/lib/compare/features.ts` | Segment vectors, angles, ratios, knee alignment, bobbing, mirror |
-| `src/lib/compare/align.ts` | Subsequence DTW, tries, partial, mirror (pure TS) |
-| `src/lib/compare/feedback.ts`, `tips.en.ts` | Pauses, gates, ranking, bands, wording (pure TS) |
-| `src/lib/compare/store.ts` | Saved teacher steps (NVB2) + delete |
-| `src/lib/compare/*.test.ts` | Tests with Node 22's `--experimental-strip-types`; no new dependency |
+| `src/app/compare/page.tsx` | Server component (sets the page title) rendering `CompareClient` |
+| `src/components/compare/CompareClient.tsx` | The 3-step flow; inline status (no toasts) |
+| `src/components/compare/VideoPanel.tsx` | `<video>` + skeleton canvas + joint marker + ghost |
+| `src/components/compare/TrimBar.tsx` | Zoomed strip, Start/End-here, nudges, play selection; handles are accessible sliders |
+| `src/components/compare/Results.tsx` | Bands, Timing line, "Not checked" notes, tips, Show me, switches |
+| `src/lib/compare/extract.ts`, `queue.ts`, `identity.ts` | Models, frame canvas, reader, two-pass scan, dancer choice, job queue |
+| `src/lib/compare/features.ts` | Segment vectors and velocities, angles, ratios, knee roll-in, bobbing, range of movement |
+| `src/lib/compare/align.ts` | Pauses, step kind, subsequence DTW, found tests, tries, partial, mirror, posture/hold matching (pure TS) |
+| `src/lib/compare/feedback.ts`, `tips.en.ts` | Phases, gates, ranking, bands, wording (pure TS) |
+| `src/lib/compare/store.ts` | Session and saved teacher steps (NVB2) + delete |
+| `src/lib/compare/*.test.ts` | Node 22 `--experimental-strip-types` tests; no new dependency |
 | `Navbar.tsx` (edit) | "Compare" link |
-| `privacy/page.tsx` (edit) | The two lines above + the delete button |
+| `LiveChat.tsx` (edit) | Hidden on `/compare` (it covers the stacked phone panes) |
+| `privacy/page.tsx` (edit) | The lines above + the delete button |
 
 No new npm dependencies and no backend changes.
 
@@ -174,56 +275,57 @@ No new npm dependencies and no backend changes.
 ## 4. YouTube: why the literal request can't be built
 
 Checked in `01-research-brief.md`:
-- **Drawing on the YouTube player is forbidden** by YouTube's embed rules, even with a transparent layer.
-- **A web page can't read the pixels** of a YouTube embed (browser security), so there's nothing to run the pose model on.
-- **Downloading on our server (yt-dlp)** breaks YouTube's Terms, is blocked on Render's servers ("confirm you're not a bot"), and would break the "nothing leaves your device" promise.
-- **Screen-capturing the tab** works only on desktop Chrome/Edge (not phones), asks permission every time, and conflicts with YouTube's developer policy III.I.14.
-- **The honest route:** if it's the teacher's own YouTube video, they can download it from YouTube Studio and upload it. The page says so.
+- **Drawing on the YouTube player is forbidden** by YouTube's embed rules.
+- **A web page can't read the pixels** of a YouTube embed (browser security).
+- **Downloading on our server (yt-dlp)** breaks YouTube's Terms, is blocked on Render's servers, and breaks the "nothing leaves your device" promise.
+- **Screen-capturing the tab** is desktop Chrome/Edge only and conflicts with YouTube's developer policy III.I.14.
+- **The honest route:** a teacher's own YouTube video can be downloaded from YouTube Studio and uploaded here. The page says so.
 
 ---
 
 ## 5. How this was attacked and fixed
 
-> **How this was reviewed:** first, one session's own single-pass self-review (A1–A17). Then the round-3 critic issues that apply to Phase 1 were folded in (R1–R10 below). The round-4 critic check is recorded in `04-open-issues.md`.
+> **How this was reviewed:**
+> 1. A single-pass self-review (A1–A17).
+> 2. The round-3 critic issues that apply to Phase 1 (R1–R10).
+> 3. Round 4: four critic agents, one of which built a synthetic prototype of §3.4 and ran 20+ cases (F1–F18).
+>
+> The full round-4 issue list is in `04-open-issues.md`.
 
 | # | Proposal | Attack | Fix |
 |---|---|---|---|
-| A1 | Compare frame by frame | Different lengths, starts, speeds | DTW stretches time |
-| A2 | Plain DTW over both whole videos | Walking in and extra tries get forced in | **Subsequence** DTW |
-| A3 | Fixed "match found" cost | Rejects beginners | **Relative** dip test |
-| A4 | Single best match | One lucky try decides | Up to 6 tries; tips need half |
-| A5 | Teacher step longer than what you did | Search fails | Reverse search + coverage |
-| A6 | Raw joint positions | Size and distance differ | Directions, angles, ratios |
-| A7 | Pure 2D angles | Camera angle looks like a wrong pose | 3D knees/elbows; view gate for 2D |
-| A8 | "Your left arm" | Mirroring | Try both; colour the joint |
-| A9 | Tip on any difference | Jitter, hidden knees, fidgeting | Tolerance + 40% + visibility + switches |
-| A10 | Mocap clean-up filters | Erase quick lifts | Not used for features |
-| A11 | One % score | Fake precision | Bands |
-| A13 | Seek frame by frame | Slow on phones | Playback + rVFC, slowing down if needed |
-| A14 | Background people, mirrors | Wrong person | Size + facing continuity; similar-depth warning |
-| A15 | Save students' videos | Children; shared demo id | Save nothing about the student |
-| A16 | In-page recorder | iOS audio rules, formats | Phone camera via file input; recorder in Phase 2 |
-| A17 | DTW can't see a wrong stamp count | Most common footwork error | Stated; Phase 2 strike layer |
-| R1 | "Sit lower" gated only by wording | Knees rolling in is the injury risk | **Knee-alignment** feature; depth tip suppressed when knees roll in or can't be seen |
-| R2 | Torso lean vs image vertical | Handheld tilt → false tips | Side tilt **relative to the legs** |
-| R3 | Torso band "Close match" | Forward lean invisible from the front | "Partly checked: side tilt only" |
-| R4 | Every frame in the span scored | A rest mid-take reads as "sit lower" | Pauses ≥ 1.5 s in moving steps excluded and shown |
-| R5 | Hold = whole matched span | Picks the waiting moment | Longest run in the teacher's posture, then the steadiest 2 s |
-| R6 | Two people: warn always | People behind the dancer | Warn only at similar depth |
-| R7 | Follow the nearest body | Mirror reflection takes over | Also require similar size and the same facing |
-| R8 | Reset the model per video | Rebuilds the whole graph | Timestamp jump; one job queue |
-| R9 | Privacy: "nothing leaves the device" | Model downloads hit Google/jsDelivr | Disclosed (or self-host) |
-| R10 | Thresholds calibrated on adults | Most students are children | All Phase 1 tips beta; Phase 2 calibrates per stratum |
+| A1–A4 | Frame by frame; plain DTW; fixed cost; best match only | Lengths, padding, beginners, luck | Subsequence DTW, relative + absolute found tests, tries |
+| A5–A9 | Partial; raw positions; 2D angles; "left arm"; tip on any difference | Coverage, size, view, mirroring, noise | Reverse search, ratios, view gate, joint markers, gates |
+| A10–A17 | Mocap filters; % score; seek-only; save videos; in-page recorder; DTW counts | Lifts erased, fake precision, slow phones, children, iOS, stamp counts | See the earlier rows; stamp count → Phase 2 |
+| R1–R10 | Round-3 fixes | Safety gate, tilt, forward lean, pauses, holds, people, privacy, children | Kept, and refined below |
+| F1 | Whole-body posture DTW for every step | **Thattadavu-like steps have no timing signal** (m_T ≈ 1): correct takes rejected, a frozen aramandi "found" | **Step kinds**: posture steps are judged as posture plus "part moving"; no timing claims |
+| F2 | Baseline = median of the whole cost profile | Rejects tight and beginner takes; accepts another adavu | Baseline outside the match + absolute ceiling + "real movement" test (validated) |
+| F3 | Pauses removed after alignment | A 4 s pause split one try into two squeezed halves | **Cut before alignment** (validated: 1 try, error 0) |
+| F4 | Reverse search only if nothing is found | 50% takes "found" squeezed, with a false speed tip | Also when squeezed; better reading wins; no speed tip when partial |
+| F5 | Steps of ½–2× only | Span limits never apply; half-speed misaligned | (1,3)/(3,1) steps; "more than 2×" wording |
+| F6 | Median over the whole step | Arms never raised in one third of the step: no tip, even a "strength" | **Per-phase medians + range of movement**; strengths must pass in every phase |
+| F7 | Knee offset compared with the teacher | A shallow bend reads as rolling in | **Absolute 3D roll-in** + knee inside the ankle |
+| F8 | Mirror from cost, tie → no side words | Beginner ties picked the wrong mirror plus a half-phrase shift (6/6 seeds) | Mirror from velocities; tie → normal way; only agreed tips |
+| F9 | Holds through the step search | Judged by duration | Holds bypass the search |
+| F10 | Default 30 s around the playhead | Mostly talk around a 6 s step | Suggest the moving run (2–12 s); warn if > 40% still |
+| F11 | `numPoses: 2` "with MediaPipe smoothing" | **No smoothing with 2 poses**; detector behaviour changes | `numPoses: 1` (smoothed) + a 1 Hz IMAGE identity pass; jitter-relative thresholds |
+| F12 | `play()` after downloads | iPhone Low Power Mode blocks it, so progress sits at 0% | Prime inside each tap; separate "Analyse" tap; seek fallback; "Tap to continue" |
+| F13 | Phone camera via the file input | Android 14+ hides the camera option; low-RAM phones reload the tab | Two buttons (Record = `capture="user"`); teacher step saved for the session first |
+| F14 | Follow the body if size within 25% and same facing | A bend or turn loses her forever | Gap-growing tolerance, facing through side, re-pick after 1 s |
+| F15 | Drag two handles | Unusable on a 50-min file on a phone | Zoomed strip, Start/End-here, nudges, sliders |
+| F16 | GPU checked on a still image | HEVC, rotation, 4K and a lost context read as "no person" | Own ≤ 960 px canvas, pre-checks, our own GL context |
+| F17 | Sync by `playbackRate` of the teacher | iOS pauses one video; rates warble | One Play tap, teacher muted, smoothed rate map |
+| F18 | "Gone when you leave"; red = error | Back/forward cache restores it; red already means "unsure", and colour-blind users can't tell | `pagehide`/`pageshow` reset; ring + arrow markers; LiveChat hidden |
 
 **Known Phase 1 limits (accepted):**
 - No AI tips from YouTube links.
-- No stamp-count tip.
+- Thattadavu-type steps get posture checks only (no stamp count or timing).
 - No mudra tips at full-body distance.
 - Leg tips are often withheld under a saree.
 - Forward lean is not checked from the front.
 - One step range per teacher file.
 - Each student marks the teacher step themselves.
-- Tolerances are first guesses.
+- Tolerances are first guesses (beta).
 
 ---
 
@@ -231,23 +333,33 @@ Checked in `01-research-brief.md`:
 
 Each step is checked before the next.
 
-1. `features.ts`, `align.ts`, `feedback.ts` with Node tests on synthetic stick figures:
-   - a time-stretched copy (0.6×, 1.8×) → found, no tips;
-   - padded with standing and walking → found;
-   - 3 tries → 3 found;
-   - mirrored → found, no side claim;
-   - knee changed by 25° → knee tip;
-   - an arm 15° low throughout in a 40% partial take → found, partial, arm tip;
-   - standing only → not found;
-   - half the step → ~50% coverage;
-   - a 4 s pause mid-take → excluded, no knee tip;
-   - knees rolled in → alignment tip, no depth tip;
-   - 5° camera roll → no tilt tip;
-   - a masked 1 s gap → found, gap not scored.
-2. `extract.ts`, `queue.ts`, `VideoPanel`: skeleton on an uploaded video, checked in headless Chromium.
-3. The `/compare` page: trim with ETA, progress, results, "Show me", ghost, switches, sync play, save/delete teacher step, Navbar link, privacy lines.
-4. **End-to-end:**
-   - record the 3D dancer from `/learn` as a teacher file;
-   - compare it against a slowed, shifted and padded copy;
-   - expect: found, few or no tips;
-   - plus `tsc`, `eslint` and `next build`.
+**1. Pure logic with Node tests** (`features.ts`, `align.ts`, `feedback.ts`). Start from the round-4 experiment's synthetic stick figures: a step-A (no cycle), a step-W (arms only) and a step-P (Thattadavu-like). It must pass:
+- 0.6× and 1.8× stretched copies, padded → found, no tips;
+- **a tight trim** → found;
+- 3 tries → 3 found;
+- mirrored → found, normal way unless clear;
+- standing, waving, squats → not found;
+- **frozen in the right posture on a movement step** → not found;
+- another adavu-like move → not found;
+- a beginner (tight and padded) → found, knee tip;
+- 40% partial with an arm 15° low → partial, arm tip, no speed tip;
+- a 4 s pause → cut, 1 try;
+- teacher talk inside the step → cut, found;
+- 2.3× slower → aligned, "more than 2× slower";
+- **arms never raised in one phase** → arm tip, not a strength;
+- a 70%-height arm raise → range-of-movement tip;
+- **step-P** → posture step, posture tips, "feet hardly moved" when frozen;
+- a 20 s hold vs a 5 s teacher hold → found;
+- correct deep and shallow knees → no roll-in claim;
+- rolled-in knees → roll-in tip, no depth tip;
+- a small child at 3 m standing still → no bobbing or pause errors;
+- 5° camera roll → no tilt tip.
+
+**2. Extraction:** `extract.ts`, `identity.ts`, `queue.ts`, `VideoPanel`. Skeleton on uploaded videos in headless Chromium (CPU delegate set explicitly; it is a smoke test, not a calibration). Then an iPhone and an Android 14+ phone: Low Power Mode, an HEVC `.mov`, a portrait video, the camera handoff.
+
+**3. The `/compare` page:** trim, progress, results, Show me, switches, sync play, save/delete, Navbar, LiveChat hide, privacy lines, back/forward-cache reset.
+
+**4. End-to-end:**
+- record the 3D dancer from `/learn` as a teacher file and compare it with a slowed, shifted, padded copy;
+- expect: found, few or no tips;
+- plus `tsc`, `eslint` and `next build`.

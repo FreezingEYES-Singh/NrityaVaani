@@ -1,5 +1,167 @@
 # Video compare feature: open issues and change history
 
+Newest round first. All issues from rounds 1–4 have a recorded resolution.
+
+## Round 4 critic issues and how each was resolved (revision 4)
+
+**Four critic agents reviewed revision 3:**
+
+| Critic | Covered |
+|---|---|
+| A | Phase 1 algorithm. Built a synthetic prototype of the Phase 1 alignment and ran 20+ cases. |
+| B | Phase 1 inputs, engineering and UX. Checked against the installed tasks-vision 0.10.34, MediaPipe and WebKit source, and the repo. |
+| C | Phase 2 footwork. Checked against MediaPipe source and contact times measured in `thattadavu.nvclip`. |
+| D | Phase 3, legal and completeness. |
+
+**Totals:** 40 issues (5 critical, 17 high, 18 medium), plus 1 low point folded in. The verdicts on round-3 fixes are folded into the resolutions below.
+
+**Section references:**
+- §n.n = `03-design.md` (revision 4);
+- 05 §n = `05-mvp.md`;
+- Rnn = the history table in 03 §1.
+
+### Phase 1: algorithm (critic A)
+
+**[critical] posture-only-steps-unalignable**
+- **Problem:** Thattadavu-like steps cost about the same as their own frozen pose (motion ratio ≈ 1). As a result, correct tight and repeated takes were rejected, a frozen aramandi was "found", and speed readings were arbitrary.
+- **Resolution: fixed (R57).** Each step is classified by the teacher's motion ratio. Posture steps are judged as posture plus a "part moving" check, with no timing claims (05 §3.2, §3.5).
+
+**[critical] found-median-baseline**
+- **Problem:** the median of the whole profile is the wrong baseline.
+- **Resolution: fixed (R58).** The dip is measured against end costs outside the match and outside accepted tries. An absolute ceiling τ_T and a "real movement" test against the student's frozen pose were added. Validated on the non-periodic and arms-only steps (05 §3.4).
+
+**[critical] pauses-after-alignment**
+- **Problem:** pauses were handled after alignment.
+- **Resolution: fixed (R59).** Pauses are cut from both videos before alignment, with an index map. Validated: 1 try, alignment error 0 (§3 F2).
+
+**[high] partial-never-reached**
+- **Resolution: fixed.** The reverse search also runs when the match is squeezed; the better per-frame reading wins; partial readings give no speed tip (05 §3.4).
+
+**[high] slope-vs-span**
+- **Resolution: fixed.** (1,3)/(3,1) steps were added; the span limits now match what the steps allow; "more than 2×" wording at the limit (05 §3.4).
+
+**[high] median-gate-hides-phase-errors**
+- **Resolution: fixed (R60).** Medians per phase (split at velocity minima), a range-of-movement check, and strengths must hold in every phase (05 §3.6, §6.1).
+
+**[high] knee-alignment-depth-confounded**
+- **Resolution: fixed (R61).** An absolute 3D roll-in on bent frames, plus the knee inside the ankle; never compared with the teacher (05 §3.3, §5.1).
+
+**[medium] mirror-tie-rotation**
+- **Resolution: fixed.** The mirror is decided on velocities; a tie uses the normal way; only tips both readings agree on are kept.
+
+**[medium] holds-through-sdtw**
+- **Resolution: fixed.** Holds bypass the step search (§3 F5, 05 §3.5).
+
+**[medium] default-30s-range**
+- **Resolution: fixed.** The default selection is the moving run (2–12 s, from pixel motion), with a warning when the selection is > 40% still (§2.1(a)).
+
+### Phase 1: inputs, engineering, UX (critic B)
+
+**[critical] p1-numposes2-no-smoothing**
+- **Problem:** MediaPipe smoothing only runs with `numPoses: 1`.
+- **Resolution: fixed (R62).** Phase 1 uses VIDEO/numPoses 1 (smoothed) plus a 1 Hz IMAGE/numPoses 3 identity pass, with thresholds relative to each video's jitter. Phase 2 uses numPoses 2 raw on purpose, frozen in `configHash`. Test: "child at 3 m standing still" (§2.4, §2.6, 05 §3.1).
+
+**[high] p1-play-blocked-no-gesture**
+- **Resolution: fixed (R63).** `play()`/`pause()` is primed inside each tap; a separate "Analyse my video" tap; a seek-loop fallback that waits for a presented frame or drops the sample; "Tap to continue"; Wake Lock re-requested (§2.3).
+
+**[high] p1-camera-handoff-loses-teacher**
+- **Resolution: fixed.** The teacher step is saved for the session before the camera opens and restored after a reload; "Choose" and "Record" (`capture="user"`) are separate buttons (§2.2, 05 §1).
+
+**[high] p1-identity-gates-no-reacquire**
+- **Resolution: fixed.** Size tolerance grows with the gap; facing changes through side, and the facing rule applies only with ≥ 2 people; the dancer is re-picked after 1 s; ankles are required only when Legs is on (§2.5, 05 §3.1).
+
+**[high] p1-trim-unusable-on-phones**
+- **Resolution: fixed.** Zoomed strip, Start/End-here, nudges, play selection, accessible sliders (§2.1(a)).
+
+**[medium] p1-device-failure-reads-as-no-person**
+- **Resolution: fixed.** Our own ≤ 960 px canvas (rotation, downscale); width and non-blank pre-checks; an upright check; our own GL canvas with context-loss handling; the GPU check also runs on the first real frame (§2.3, §2.4).
+
+**[medium] p1-sync-playback-ios**
+- **Resolution: fixed.** One Play tap; the teacher is muted by default with a sound toggle; a smoothed rate map (05 §3.4).
+
+**[medium] p1-wait-and-data**
+- **Resolution: fixed.** A two-pass student scan; the download size is always shown; the ETA comes from a speed test; 3-min estimates added (§2.3, §11).
+
+**[medium] p1-colour-cue-and-site-chrome**
+- **Resolution: fixed.** Ring + arrow + thick-limb markers; unsure joints faded; LiveChat hidden; inline status; a server `page.tsx` (§7).
+
+**[medium] p1-storage-privacy-mismatch**
+- **Resolution: fixed.** Fingerprint keys; object URLs revoked; a camera-copy line; the "when you use" wording; the "No Recording" pillar rewritten (§2.7).
+
+**[low, folded in] headless SwiftShader in the Phase 1 smoke test**
+- **Resolution: fixed.** The smoke test sets the CPU delegate explicitly and makes no calibration claims (§9).
+
+### Phase 2: footwork (critic C)
+
+**[critical] deletion-without-evidence**
+- **Problem:** soft but real strikes became "missing strikes".
+- **Resolution: fixed (R64).** A deletion needs evidence of absence; the audio veto is limited to silent slots; `INTERP`, low-visibility and despiked samples mask slots; a third prompt button "I did N: you missed some"; labelling from frame-stepped video; a correct Adavu 4 with soft strikes as a test (§4.1, §3 F3b, §9).
+
+**[high] split-at-speed-change**
+- **Resolution: fixed (R65).** Takes are split only at pauses; practice-track takes are never split; each speed section is judged against the declared card (§3 F3b).
+
+**[high] sections-before-alignment**
+- **Resolution: fixed (R66).** Order: τ (practice-track clock, or card-aware with a spectral cross-check and abstention), then alignment, then sections on residuals, iterated once on uploads (§4.1, §4.3).
+
+**[high] take-too-short**
+- **Resolution: fixed.** Recurrence is counted over mirrored half-phrases; take length per card and tempo is stated up front; medium tempo is suggested when needed (§2.2, §4.2).
+
+**[high] no-filter-at-numPoses-2**
+- **Resolution: fixed (R62).** Raw lanes are documented as intended; σ_j = max(still SD, motion MAD); `numPoses` is frozen in `configHash`; a P0 child-jitter measurement (§2.6).
+
+**[high] calibration-matrix**
+- **Resolution: fixed (R69).** fps tiers by decimation plus a small real set; pooled card groups; ≥ 10 good takes per group and stratum; a beta-binomial baseline; ~400 error + 60 good takes; an optional age band, otherwise everything stays beta (§9).
+
+**[medium] count-in**
+- **Resolution: fixed.** An in-tempo bar with a spoken "1"; the strip stays blank until 1; a window of min(½ pulse, ¼ half-phrase); Bluetooth means "not checked" (§4.2).
+
+**[medium] card-data (Adavu 8)**
+- **Resolution: fixed.** The reviewer settles Adavu 8 first; durations are shown on the strip; each distinct slot duration is its own class (§2.1(b)).
+
+**[medium] leg-templates**
+- **Resolution: fixed.** Steadiness is phase-averaged over all frames against a shuffled null; footwork knee roll-in is calibrated on a depth × turnout sweep (§5.1, §9).
+
+**[medium] practice-track-leak**
+- **Resolution: fixed.** High-passed noise bursts; a per-take self-test during the count-in; no reliance on subtraction (§2.1(b)).
+
+### Phase 3, legal and completeness (critic D)
+
+**[high] p1-android-camera-option-missing**
+- **Resolution: fixed (R63).** A separate "Record" button with `capture`; camera-app gallery copy disclosed; "play the teacher on another screen" guidance; Timing kept out of the 3 tips; Android 14+ added to device checks (§2.2, §9).
+
+**[high] yt-recorder-unusable-on-phone**
+- **Resolution: fixed (R67).** No in-page YouTube recorder on phones (watch, then record/upload); full-width player on desktop/tablet; the player cued 5 s before mark start; Shorts stacked with a pane toggle (§8).
+
+**[high] yt-child-directed-client-unassessed**
+- **Resolution: fixed (R70).** Decision 8 (child-directed status and jurisdiction); the III.J notification; the operator named; age wording matched to the jurisdiction (§8, §12).
+
+**[high] crash-resume-key-not-tab-bound**
+- **Resolution: fixed (R68).** A Web Lock per take; the sweep rule; a 2 h cap; a resume prompt without preview (§2.2, §2.7).
+
+**[medium] yt-meta-limiter-spoofable**
+- **Resolution: fixed.** A Netlify route handler (header check at deploy) or the rightmost XFF hop; a per-id cache; a global hourly cap; defined failure behaviour (§8).
+
+**[medium] yt-player-rule-gaps**
+- **Resolution: fixed.** Stall detection; `fs=0` without `allowfullscreen` and a `fullscreenchange` backstop; `iframe_api` injected on tap; reworded contact lines; a shared Navbar menu store; prompts in the strip; audio unlocked on "Get camera ready" (§8).
+
+**[medium] p1-bfcache-restores-previous-take**
+- **Resolution: fixed.** On `pagehide`, clear everything; a `pageshow`-with-`persisted` restore resets to step 1; URLs revoked on unmount (§2.7, §7).
+
+**[medium] privacy-pillars-contradict**
+- **Resolution: fixed.** Per-phase rewrites of the pillars; Microsoft named for edge-tts; "Delete practice summaries"; "accounts don't separate data" (§2.7).
+
+**[medium] calibration-child-data-custody**
+- **Resolution: fixed.** A private bucket and access list; a deletion date; no child-derived fixtures in the public repo; the consent form contents; a named custodian (§9, decision 4).
+
+**[medium] gap-framing-and-decisions**
+- **Resolution: fixed.**
+  - a YouTube row in "Who gets what";
+  - the A-lite option in decision 2;
+  - Phase 1 tolerances re-derived from Phase 2 good takes;
+  - the ghost marked "if time allows";
+  - decisions 8 and 9 added;
+  - the custodian added to decision 4 (§0, §12).
+
 ## Round 3 critic issues (addressed in revision 3; see the resolution list below)
 
 ### alignment
