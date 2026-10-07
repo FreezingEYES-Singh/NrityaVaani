@@ -42,7 +42,7 @@ cd frontend && BACKEND_URL=http://127.0.0.1:8000 NEXT_PUBLIC_BACKEND_URL=http://
 | `287aba3` | Renamed `src/middleware.ts` to `src/proxy.ts` (Next 16 deprecation; the `/checkout` login redirect still works). Fixed 10 lint warnings. Fixed the mocap 404 and layout (both now moot after the next commit). |
 | `1494ea6` | **Removed the `/mocap` page entirely**, plus the code only it used: `api/critique` (the AI review route), `lib/mocap/bakeStore.ts`, and `lib/motion/{clipStore,collide,polish,validate,critic}.ts`. Also removed `calibrateSpread` from MocapFigure, uninstalled `openai` + `@anthropic-ai/sdk`, and removed the footer link and README mentions. `MocapFigure.tsx` is KEPT: it renders the 3D dancer in the `/learn` lesson player. |
 | `bd6fef8` | `HANDOFF.md` + `docs/video-compare/01..04` (feature design research, see §4). |
-| (next commit) | `docs/video-compare/05-mvp.md`: the cut-down MVP design, presented to the user for approval (see §4). |
+| `0b2f1d2`..`eea5153` | `05-mvp.md` (Phase 1 spec) and design revision 3 (see §4). |
 
 Verified after each commit: tsc, eslint, `next build`, all 17 routes load with no console errors in headless Chromium, and the lesson player still plays and responds to its camera presets.
 
@@ -93,17 +93,21 @@ A multi-agent design run: 4 research agents → 4 competing designs → 3 judges
 3. Fix the 5 critical issues in whatever survives the cut.
 4. **Present the solution + decisions (03-design.md §12) to the user and wait for approval before writing code.**
 
-### UPDATE (session 2): MVP design written, waiting for approval
-`docs/video-compare/05-mvp.md` is the current design. It replaces the 7-week plan with a small MVP:
-- `/compare` page. The teacher's video file is uploaded and one step is trimmed. The student uploads their take (or uses the phone's camera through the file input).
-- On-device PoseLandmarker. Subsequence DTW finds the step inside the student video, including several tries, partial practice and mirroring.
-- Up to 3 gated tips (knees, elbows, arm height, spreads, torso lean, bobbing, speed), shown with "Show me", ghost and synced playback.
-- Nothing about the student is saved.
-- No YouTube in the MVP. No stamp-count tip (DTW can't see it, an accepted limit, planned for phase 2).
-
-The round-3 criticals are resolved by the cut: no clean-up filters, no pattern cards or version check, and no student storage.
-
-**Next step:** get the user's answers to the decisions in the chat (YouTube option, MVP scope, storage, navbar link). Then build Phase 1 in the order given in 05-mvp.md §6.
+### UPDATE (session 2): revision 3 done, round-4 critic check in progress
+- **Revision 3 is applied** (commit `eea5153`).
+  - `03-design.md` is rewritten as the round-5 roadmap.
+  - All 64 round-3 issues have a resolution entry in `04-open-issues.md` → "Round 3: how each issue was resolved".
+- **Phases are re-cut:**
+  - **Phase 1** = the general core path for any teacher video file: subsequence DTW on posture, gated tips, nothing about the student stored. Spec: `05-mvp.md`.
+  - **Phase 2** = the Thattadavu footwork layer: pattern cards + generated practice track, recorder, raw-lane strikes, declared-step prior, clocked start foot, calibration including children.
+  - **Phase 3** = YouTube practise-beside, studio references, teacher packs, full audio.
+- **Round 4:** 4 critic agents were started on the revision:
+  - Phase 1 algorithm, with a synthetic sDTW experiment;
+  - Phase 1 inputs, engineering and UX;
+  - Phase 2 footwork;
+  - Phase 3, legal and completeness.
+  Their findings get applied, then the final solution and the 7 decisions in 03 §12 are shown to the user.
+- **If this session ended before that:** re-run those 4 critics (lenses as listed), apply the findings, add a "Round 4" section to `04-open-issues.md`, then present 03 §0 + §12 to the user. **No feature code until the user approves.**
 
 ### Prompt to start the next session
-> Read HANDOFF.md and docs/video-compare/05-mvp.md on branch claude/relaxed-fermat-ctr4u2. If I've approved the MVP, build Phase 1 in the order in §6, verifying each step (tests, tsc, eslint, build, headless browser). Otherwise show me the decisions again.
+> Read HANDOFF.md and docs/video-compare/ (03-design.md, 04-open-issues.md, 05-mvp.md) on branch claude/relaxed-fermat-ctr4u2. If the round-4 critic results aren't in 04-open-issues.md yet, finish that step first. If I've approved, build Phase 1 in the order in 05-mvp.md §6, verifying each step (tests, tsc, eslint, build, headless browser). Otherwise show me the solution and decisions again.
