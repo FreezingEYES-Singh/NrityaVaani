@@ -42,7 +42,7 @@ cd frontend && BACKEND_URL=http://127.0.0.1:8000 NEXT_PUBLIC_BACKEND_URL=http://
 | `287aba3` | Renamed `src/middleware.ts` to `src/proxy.ts` (Next 16 deprecation; the `/checkout` login redirect still works). Fixed 10 lint warnings. Fixed the mocap 404 and layout (both now moot after the next commit). |
 | `1494ea6` | **Removed the `/mocap` page entirely**, plus the code only it used: `api/critique` (the AI review route), `lib/mocap/bakeStore.ts`, and `lib/motion/{clipStore,collide,polish,validate,critic}.ts`. Also removed `calibrateSpread` from MocapFigure, uninstalled `openai` + `@anthropic-ai/sdk`, and removed the footer link and README mentions. `MocapFigure.tsx` is KEPT: it renders the 3D dancer in the `/learn` lesson player. |
 | `bd6fef8` | `HANDOFF.md` + `docs/video-compare/01..04` (feature design research, see §4). |
-| `0b2f1d2`..`eea5153` | `05-mvp.md` (Phase 1 spec) and design revision 3 (see §4). |
+| `605aaf1`..`eea5153` | `05-mvp.md` (Phase 1 spec) and design revision 3 (see §4). |
 
 Verified after each commit: tsc, eslint, `next build`, all 17 routes load with no console errors in headless Chromium, and the lesson player still plays and responds to its camera presets.
 
