@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/copy-mediapipe-wasm.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-mediapipe-wasm.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:compare": "node --experimental-strip-types --no-warnings --test \"src/lib/**/*.test.ts\"",
     "build:poses": "node scripts/build-mudra-poses.mjs"
   },
   "dependencies": {
