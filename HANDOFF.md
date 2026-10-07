@@ -1,6 +1,6 @@
 # Handoff: session notes for the next Claude session
 
-**Branch:** `claude/blissful-lovelace-305wig`. All work is pushed to it; `main` is untouched, and no PR is open yet.
+**Branch:** `claude/relaxed-fermat-ctr4u2` (continues `claude/blissful-lovelace-305wig`, which it contains). `main` is untouched, and no PR is open yet.
 **Last updated:** 2026-10-07
 
 Read this file first. It covers what was done, how to confirm it, what is still open, and where the new "video compare" feature design stands.
@@ -11,8 +11,8 @@ Read this file first. It covers what was done, how to confirm it, what is still 
 
 ```bash
 cd NrityaVaani
-git checkout claude/blissful-lovelace-305wig && git pull
-git log --oneline -6        # expect the 4 commits listed in §2 on top of cc0b378
+git checkout claude/relaxed-fermat-ctr4u2 && git pull
+git log --oneline -6        # expect the commits listed in §2 on top of cc0b378
 
 # Frontend checks (all should pass)
 cd frontend
@@ -41,7 +41,8 @@ cd frontend && BACKEND_URL=http://127.0.0.1:8000 NEXT_PUBLIC_BACKEND_URL=http://
 | `84698ce` | Added `frontend/AGENTS.md` + `frontend/CLAUDE.md`. Next.js 16 `next dev` auto-generates them, so they are committed to keep the tree clean. |
 | `287aba3` | Renamed `src/middleware.ts` to `src/proxy.ts` (Next 16 deprecation; the `/checkout` login redirect still works). Fixed 10 lint warnings. Fixed the mocap 404 and layout (both now moot after the next commit). |
 | `1494ea6` | **Removed the `/mocap` page entirely**, plus the code only it used: `api/critique` (the AI review route), `lib/mocap/bakeStore.ts`, and `lib/motion/{clipStore,collide,polish,validate,critic}.ts`. Also removed `calibrateSpread` from MocapFigure, uninstalled `openai` + `@anthropic-ai/sdk`, and removed the footer link and README mentions. `MocapFigure.tsx` is KEPT: it renders the 3D dancer in the `/learn` lesson player. |
-| (this commit) | `HANDOFF.md` + `docs/video-compare/*` (feature design research, see §4). |
+| `bd6fef8` | `HANDOFF.md` + `docs/video-compare/01..04` (feature design research, see §4). |
+| (next commit) | `docs/video-compare/05-mvp.md`: the cut-down MVP design, presented to the user for approval (see §4). |
 
 Verified after each commit: tsc, eslint, `next build`, all 17 routes load with no console errors in headless Chromium, and the lesson player still plays and responds to its camera presets.
 
@@ -92,5 +93,17 @@ A multi-agent design run: 4 research agents → 4 competing designs → 3 judges
 3. Fix the 5 critical issues in whatever survives the cut.
 4. **Present the solution + decisions (03-design.md §12) to the user and wait for approval before writing code.**
 
+### UPDATE (session 2): MVP design written, waiting for approval
+`docs/video-compare/05-mvp.md` is the current design. It replaces the 7-week plan with a small MVP:
+- `/compare` page. The teacher's video file is uploaded and one step is trimmed. The student uploads their take (or uses the phone's camera through the file input).
+- On-device PoseLandmarker. Subsequence DTW finds the step inside the student video, including several tries, partial practice and mirroring.
+- Up to 3 gated tips (knees, elbows, arm height, spreads, torso lean, bobbing, speed), shown with "Show me", ghost and synced playback.
+- Nothing about the student is saved.
+- No YouTube in the MVP. No stamp-count tip (DTW can't see it, an accepted limit, planned for phase 2).
+
+The round-3 criticals are resolved by the cut: no clean-up filters, no pattern cards or version check, and no student storage.
+
+**Next step:** get the user's answers to the decisions in the chat (YouTube option, MVP scope, storage, navbar link). Then build Phase 1 in the order given in 05-mvp.md §6.
+
 ### Prompt to start the next session
-> Read HANDOFF.md and docs/video-compare/ on branch claude/blissful-lovelace-305wig. Continue the video-compare feature design: cut it to a small MVP, fix the round-3 critical issues, then show me the solution and decisions for approval. Do not write feature code until I agree.
+> Read HANDOFF.md and docs/video-compare/05-mvp.md on branch claude/relaxed-fermat-ctr4u2. If I've approved the MVP, build Phase 1 in the order in §6, verifying each step (tests, tsc, eslint, build, headless browser). Otherwise show me the decisions again.
