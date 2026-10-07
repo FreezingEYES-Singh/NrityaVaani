@@ -1,57 +1,76 @@
-# Video compare feature: design (after 2 red-team rounds)
+# Video compare feature: design (revision 3, after 3 red-team rounds)
 
-> Status: DRAFT, not yet approved by the user. Round-3 critic issues in 04-open-issues.md are NOT yet applied.
+> **Status:** DRAFT, not yet approved by the user.
+> - This revision applies all 64 round-3 critic issues (5 critical, 24 high, 30 medium, 5 low). Where each one went is listed in `04-open-issues.md` → "Round 3: how each issue was resolved".
+> - **Phase 1** is specified in detail in `05-mvp.md`. This file is the full roadmap.
 
-# Guru Mirror (`/compare`): revised design (round 4)
+# Guru Mirror (`/compare`): revised design (round 5)
 
-A student practises one step next to a reference. The feedback should be something a real teacher would agree with. When the app can't judge something, it says so plainly. No video frame leaves the device.
+A student practises one step next to a reference, and the feedback should be something a real teacher would agree with. When the app can't judge something, it says so plainly. No video frame leaves the device.
 
-> This is the design only. Nothing in the repo has been created, edited or committed. You asked for the solution first, then your agreement and a plan, then code. §12 lists the decisions I need from you.
+> This is the design only. No feature code has been written. You asked for the solution first, then your agreement and a plan, then code. §12 lists the decisions I need from you.
 
 **Facts I checked in the repo and designed around**
 
-- **`public/lessons/thattadavu.json` cues:**
+- **`public/lessons/thattadavu.json` cues**
   - Aramandi: "Heels together, toes turned out… Torso straight; stay at the same height… Strike with the whole sole, flat… Always begin with the right foot".
-  - Adavu 1: "Strike right, then left… second twice as fast, the third twice again… up through the speeds, then come back down".
+  - Adavu 1 (50.9–85.9 s): "Strike right, then left… second twice as fast, the third twice again… up through the speeds, then come back down".
   - Adavu 2–4: 2, 3 and 4 strikes on each foot.
   - Adavu 5: "The same foot for all five… Two slow strikes, then three quick ones".
   - Adavu 6: "Two groups of three on one foot… A pause after each group".
   - Adavu 7: "Right on one, two, three. Left on four. Right on five, six, seven; eight is silent. Then begin with the left foot".
   - Adavu 8: "Alternate… The last three come quicker… eight is silent… Start right, then start left".
   - "Thattadavu" (intro) and "Practising" are talk steps, not danceable.
-- **`public/lessons/namaskaram.json` steps:**
+- **`public/lessons/namaskaram.json` steps**
   - Guru Vandana: anjali held, samapada, 19 s.
-  - Samapada.
-  - Katakamukha: held mudra.
+  - Samapada; Katakamukha (held mudra).
   - Aramandi: "Feet in a V shape, a bit of space between them", which differs from the Thattadavu heel rule.
   - Tapping: "Tap the right foot first and then lift. Right and left."
   - Shikhara + jump; Saluting around; Touching the ground (muzhumandi); Touching the eyes; Rising; The whole namaskaram.
-- **Things that overlap a page today:** the navbar is `fixed top-0 z-50`, `LiveChat` is `fixed bottom-4 right-4 z-[100]`, and the sonner `Toaster` sits bottom-right.
+- **Lesson audio** (`*-voice/*.mp3`) is spoken narration only. There is no sollukattu or beat track.
+- **Overlap on the page:** the navbar is `fixed top-0 z-50`, `LiveChat` is `fixed bottom-4 right-4 z-[100]`, and the sonner `Toaster` sits bottom-right.
+- **Auth:** the only always-present login is the Credentials "Demo Account", which returns user id `"1"` for everyone. Accounts therefore cannot separate data between people.
 - **No `/terms` route exists.**
-- **`/privacy` today promises:** on-device inference, "No Recording or Surveillance", local storage, and "Zero Third-Party Tracking". The recorder and the YouTube feature both require rewording (§2.7, §8).
+- **`/privacy` today promises** on-device inference, "No Recording or Surveillance", local storage, and "Zero Third-Party Tracking".
 
 ---
 
 ## 0. The short answer
 
+### What changed in this revision
+
+Round 3 showed two things:
+- **The riskiest part of the old v1 was its headline part:** the Thattadavu strike/pattern layer. 4 of the 5 critical issues and about 10 high ones were there.
+- **The user's main input, "upload any teacher video", got almost no feedback in v1:** a non-Thattadavu teacher file got one or two static checks.
+
+So the build order is turned around:
+
+| Phase | What ships | Why in this order |
+|---|---|---|
+| **Phase 1: core path** (`05-mvp.md`) | Any teacher **video file**: mark one step, get its skeleton. The student uploads a take (or uses the phone's own camera). The step is found inside the take, lined up, and gets ≤ 3 gated posture and speed tips, with "Show me", a ghost and synced playback. **Nothing about the student is stored.** | Answers the request for every dance and every step. Fewest failure modes. No dependency, recordings or reviewer needed. |
+| **Phase 2: Thattadavu footwork** | Pattern cards with a **generated practice track** and the 3D figure. A simple recorder. A strike-event layer (raw lanes). Count, silent-slot, start-foot (recorder only), height-steadiness and knee-alignment checks. Calibration including children. | Catches what Phase 1 can't see (wrong number of strikes). Built with all round-3 fixes. |
+| **Phase 3: wider inputs** | YouTube "practise beside". Studio references. Teacher-file structure pass, step proposals, several ranges, `.nvref` teacher packs. Full audio policy. Early/late with latency calibration. Extra-people classes. | Each needs Phase 1–2 underneath and has its own legal or device risk. |
+| **v2** | Namaskaram sequence steps (chunked chains), mudras at body distance, Hindi, worker, rig references | As before |
+
+### The original request, mapped
+
 | You asked | What we build | Why |
 |---|---|---|
-| Upload a video **or** paste a YouTube link, then process it | **Four kinds of reference, one data shape (§2.1):**<br>(1) **NrityaVaani pattern cards.** The Thattadavu footwork patterns, written from our own lesson cues. They need no video, so they work for every student, including YouTube-only students.<br>(2) **NrityaVaani studio references.** A consenting trained dancer is recorded once and the landmarks ship with the app. These add posture comparison.<br>(3) **A teacher video file** you have the rights to, processed on your device.<br>(4) **A YouTube link → "Practise beside YouTube".** The player is shown untouched, with loops. Your take plays beside it and is checked against the pattern card. | No web page can read pixels from YouTube's player. Downloading breaks YouTube's ToS and API policy III.E.1, Render's IP gets bot-checked, and it would break our privacy promise. Tab capture is desktop-Chrome-only and conflicts with policies III.I.14 and III.E.4. |
-| Show the stick figure on the YouTube video | The stick figure is drawn on **our own `<video>`** for files and references. For YouTube it is drawn on the **student's** video, **beside** the player. | YouTube forbids any overlay in front of its player. |
-| Student adds their video beside it and gets what's wrong plus tips | A **recorder** in one of two modes: full-screen teacher on a big screen, or "dance to the sound" on a phone. It is hands-free. You can also **upload** a take. You see both side by side and get up to 3 corrections, 1 strength and 1 focus, each with "Show me". | The recorder knows the camera, the mirroring and the timing, so they don't have to be guessed. |
-| "Not all movement is necessary, different lengths…" | **What gets judged:** (1) your trim; (2) automatic talk, hold and absence handling on the teacher; (3) one step, with **other steps inside your take found and set aside**; (4) per-step kind and body-part modes; (5) the teacher's own consistency; (6) one-sided features.<br>**How it lines up:** footwork is aligned on the **strike sequence**. It is matched cyclically against the reference phrase, with a free start point, so tempo, rep count, where you started and take length don't matter. | §3, §4 |
+| Upload a video **or** paste a YouTube link, then process it | **Video file:** Phase 1, processed on your device.<br>**YouTube link:** Phase 3, "practise beside": the player is shown untouched, and your take plays beside it with your skeleton. AI comparison needs a file. | No web page can read pixels from YouTube's player. Downloading breaks YouTube's ToS and API policy III.E.1, gets bot-checked on Render, and breaks our privacy promise. Tab capture is desktop-Chrome-only and conflicts with III.I.14 and III.E.4. |
+| Show the stick figure on the YouTube video | Drawn on **our own `<video>`** for files. For YouTube it is drawn on the **student's** video, beside the player. | YouTube forbids any overlay in front of its player. |
+| Student adds their video beside it and gets what's wrong plus tips | Side by side, synced by the alignment. Up to 3 corrections and 1 strength, each with "Show me" and a red/green joint. A ghost of the teacher on your body. | §4.7, §6 |
+| "Not all movement is necessary, different lengths…" | **What gets judged** (§3):<br>(1) you mark the teacher's step;<br>(2) the step is **searched for inside your take**, so walking in, standing and extra tries are ignored;<br>(3) pauses inside the step are set aside;<br>(4) body parts can be switched off;<br>(5) a difference must last and repeat to become a tip.<br>**Lining up** (§4): time is stretched (DTW) so tempo, length and start point don't matter. Footwork (Phase 2) also lines up **strike sequences** against the phrase. | §3, §4 |
 
-**Who gets what, step by step**
+**Who gets what**
 
-| Content | P1 (wk 1–2) | P2 (wk 3–4) | P3 (wk 5–6) | v2 |
+| Content | Phase 1 | Phase 2 | Phase 3 | v2 |
 |---|---|---|---|---|
-| Thattadavu Adavu 1–8, any student, no reference video (pattern card) | — | Pattern, count, silence, start foot, phrase correctness, speed ladder; reference-free aramandi habits | Same inside "Practise beside YouTube" | — |
-| Thattadavu with a studio reference | — | Above, plus **posture comparison** (Tier A) and a safety-gated depth tip | Phase shape (Tier B), ghost, error timeline | — |
-| Thattadavu with the teacher's own file | Upload, **skeleton on the whole prepared range**, Learn, your take side by side, no scores | Posture vs teacher, plus the pattern card **if you confirm it's the same version** | Teacher's own detected pattern; step proposal timeline | Several ranges, edited videos |
-| Namaskaram | Skeleton + side by side | **Tapping:** pattern card. **Aramandi, Samapada, Guru Vandana:** posture only (holds), studio reference or teacher file required; anjali not checked | — | Saluting / Touching / Rising (Tier C); Katakamukha, Shikhara, anjali (close-up mudra path) |
-| Other dances / steps | Skeleton + side by side | Posture (Tier A) vs a teacher file | — | Tier C chains |
+| **Any step, teacher's own file** | Skeleton, step found in your take, posture + speed tips, ghost, Show me | Footwork checks too, if you confirm the step is a Thattadavu adavu | Step proposals; several ranges; teacher packs | Chunked chains for long sequences |
+| **Thattadavu Adavu 1–8, no video** | — | Pattern card + practice track + 3D figure; count, silence, start foot (recorder), steadiness, knee alignment | Ladder tips; early/late; inside "practise beside YouTube" | — |
+| **Studio reference** | — | — | Posture comparison without a teacher file | — |
+| **Namaskaram** | As "any step" if you have a file | Tapping: pattern card | — | Sequence steps; mudras |
 
-"Thattadavu" (intro) and "Practising" can't be selected. `/live` and `/practice` remain the home of close-up mudra training.
+`/live` and `/practice` remain the home of close-up mudra training.
 
 ---
 
@@ -61,45 +80,59 @@ A student practises one step next to a reference. The feedback should be somethi
 |---|---|---|---|
 | R1 | Server downloads YouTube | ToS / III.E.1, bot checks, 512 MB, privacy | Nothing on the server |
 | R2 | Tab-capture the player | Desktop only, policy | YouTube = practise beside |
-| R3 | Global DTW | Talk, partial takes, repeats | Step by step |
-| R4 | Tempo ratio + frame DTW | Speed changes, rep counts | Event layer |
+| R3 | Global DTW | Talk, partial takes, repeats | Step by step; subsequence search |
+| R4 | Tempo ratio + frame DTW | Speed changes, rep counts | Event layer for footwork |
 | R5 | One % score | Measurement error | Bands, ≤ 3 tips, abstain |
-| R6 | Teacher = ground truth | Incidental motion | Modes, consistency, one-sided |
-| R7 | Guessed thresholds | — | Per-template calibration (R31) |
-| R8 | Long waits | — | Learn on raw video at once |
+| R6 | Teacher = ground truth | Incidental motion | Body-part switches, persistence, one-sided features |
+| R7 | Guessed thresholds | — | Calibration (now Phase 2, with children) |
+| R8 | Long waits | — | Only the marked step is processed |
 | R9 | Mixed model tiers | Different biases | One tier per project |
 | R10 | One canonical cycle | Speeds inside a step | Template per speed section |
-| R11 | Rescaled queries | Short queries match anywhere | Resample the student |
-| R12 | Rig lessons as references | Rig ↔ MediaPipe bias | Studio references; rig in v2 |
-| R13 | Whole-step distributions | Partial takes | Per section |
+| R11 | Rescaled queries | Short queries match anywhere | Resample the student; step ≥ 2 s |
+| R12 | Rig lessons as references | Rig ↔ MediaPipe bias | Rig shown as "animation, not compared" |
+| R13 | Whole-step distributions | Partial takes | Aligned frame pairs only |
 | R14 / R18 | Phase Viterbi | Can't advance fractionally | Removed |
 | R15 | Absolute τ | Rejects beginners | Relative tests |
-| R16 | Moving crop | Breaks tracking | Fixed crop per shot |
-| R17 | Absolute alignment features | Constant offset | De-meaned features, relative confidence (now per unit, R27b) |
-| R19 | sDTW skips cells free | Rewards skipping | Both skips charged (R27c) |
+| R16 | Moving crop | Breaks tracking | Fixed crop (now the union of boxes) |
+| R17 | Absolute alignment features | Constant offset | Relative confidence; offset-invariant or iterated alignment (R53) |
+| R19 | sDTW skips cells free | Rewards skipping | Both skips charged |
 | R20 | ACF finds the cycle | Long phrases, aliasing | Strike strings |
-| R21 | Mirror from cost | Indistinguishable on symmetric steps | Laterality from facts |
-| R22 | Absolute speed labels | No shared beat | Relative ladder, asked |
+| R21 | Mirror from cost | Indistinguishable on symmetric steps | Laterality from facts; no side words without them |
+| R22 | Absolute speed labels | No shared beat | Relative ladder |
 | R23 | Posture gates on students | Drops beginners | Presence and motion only |
-| R24 | Two-sided penalties, camera = gravity | — | One-sided, roll/pitch, clothing |
+| R24 | Two-sided penalties, camera = gravity | — | One-sided, roll-invariant features |
 | R25 | Generic YouTube rules | Flags choreography | Step families |
-| R26 | Big scope | — | Re-cut again (R38) |
-| **R27** | Strikes from ankle height above a world-space floor | World landmarks are hip-centred. Hip bounce, rising aramandi and standing frames move both ankles, so no strikes are found | **Differential lift:** moving ankle minus planted ankle, so hip motion cancels (§4.1) |
-| R27b | De-mean per take | Partial takes reintroduce the offset | De-mean per unit / matched span (§4.0) |
-| R27c | λ-only student skip | DTW hops over the worst frames | Skipped student frames charged; every frame in the span scored (§4.7) |
-| **R28** | Cut student strings into phrases by her own period | Rotated phrases give false count and start-foot tips; inconsistent students get nothing | **Cyclic alignment against the reference phrase** with a free start, plus **phrase correctness** (§4.2) |
-| **R29** | Pose proposes, audio refines, fixed windows | Speaker bleed, mic DSP, music, bells, A/V offset; audio can't add or veto | **One audio policy:** clean-audio gate, low-band stamp detector, per-take offset; audio **proposes and vetoes** (§2.2, §4.1) |
-| **R30** | Median-IOI pulse, raw IOI CV | Adavu 5–8 are uneven by design | **Residual IOIs** against reference slot durations (§4.2, §5.3) |
-| **R31** | One 15° dead band, one recall gate | Misses arm lines; contradicts subtle-error recall | **Per-feature noise-derived dead bands** and a detection limit (§3 F5, §9) |
-| **R32** | "Sit deeper" as tip #1 | Injury-prone without knee and heel alignment | **Safety gate:** knee-over-toe + heel-down (§5.2) |
-| **R33** | The reference *is* the step | Banis differ | **Version check** and reference-relative wording (§4.2) |
-| **R34** | Fresh landmarker per shot | Leaks WASM heaps and WebGL contexts | **Pool** + `setOptions` reset + session-wide timestamps (§2.4) |
-| **R35** | Recorder take: in-memory, cue-less WebM, read by playback | Lost on tab kill, unseekable, dropped samples | **Remux, temp IndexedDB, same reader; live detection where fast** (§2.2) |
-| **R36** | Dance along with a phone at 3 m | Can't see the teacher; 3–4 min wait per take | **Full-screen or sound mode, hands-free, short takes, live detection** |
-| **R37** | Single person; identity only flagged | Mirrors, posters, class videos; latches onto a parent | **Classify extra people, tap-to-pick in P1, signature re-acquire** (§2.5) |
-| **R38** | Everything in 6 weeks | Can't finish or calibrate | **v1 = Thattadavu path.** Calibration budgeted as clips × templates (§9, §12) |
-| **R39** | Comparison only with a studio dancer | Single point of failure | **Pattern cards ship from cues regardless** |
-| **R40** | Static holds = TALK | Samapada and anjali dropped | **STANDING_HOLD**; user marks override; hold steps use Tier A on the stillest window |
+| R26 / R38 | Big scope | Can't finish or calibrate | **Re-cut again: R41** |
+| R27 | Strikes from ankle height above a floor | Hip motion | Differential lift |
+| R27b / c | De-mean per take; λ-only skip | Offsets; hops over bad frames | Per-span handling; every frame scored |
+| R28 | Cut by the student's own period | Rotated phrases | Cyclic alignment with a free start |
+| R29 | Pose proposes, audio refines | Bleed, DSP, music | One audio policy |
+| R30 | Median-IOI pulse | Uneven adavus | Residual IOIs |
+| R31 | One dead band | Misses arm lines | Per-feature, noise-derived |
+| R32 | "Sit deeper" first | Injury risk | Safety gate (now on knee alignment, R47) |
+| R33 | The reference *is* the step | Banis differ | Version check (now authoritative, R43) |
+| R34 | Fresh landmarker per shot | Leaks | Pool; timestamp jumps (R52) |
+| R35 | In-memory recorder take | Lost on tab kill | Remux + encrypted temp record (R50) |
+| R36 | Dance along with a phone at 3 m | Can't see the teacher | Practice track + full-screen teacher |
+| R37 | Single person | Mirrors, posters, class videos | Classes (now both mirror geometries, depth-aware, R48) |
+| R39 | Comparison only with a studio dancer | Single point of failure | Pattern cards; Phase 1 needs no dancer at all |
+| R40 | Static holds = TALK | Holds dropped | STANDING_HOLD; holds judged in their target state (R46) |
+| **R41** | Thattadavu event layer as v1 | ~25 subsystems for 3 people; non-Thattadavu files got almost nothing | **Phase 1 = general core path** (whole-step subsequence DTW on posture) for any file. The event layer moves to Phase 2 with fewer templates. |
+| **R42** | Clean all lanes with the mocap filters | `despike`/`stabilise` erase 2-sample, 3 cm lifts; σ_j ≈ 0 makes the SNR gate pass when detection fails | **Events run on raw lanes** (MediaPipe's own filter only; despike only jumps > 0.25 m). σ_j measured on raw still frames. The mocap chain is used for the overlay only. |
+| **R43** | Label runs by the best card; consistent deviation = "different version" | The most common error (a neighbour adavu's count, a stamp on the silent count) was silenced | **The declared step has a strong prior.** A single-pattern take is always judged against it. A whole-take match to another card in the same lesson asks "Which were you practising?" The version answer is authoritative. |
+| **R44** | Phrase correctness = share of exact phrases | 0.95¹⁴ ≈ 0.49: correct dancers fail | **Per-strike edit rate vs the detector's measured rate**, ≥ 4 fully judged phrases, partial phrases excluded |
+| **R45** | Free-start alignment decides start foot | A wrong start is a zero-cost rotation | **Start foot only against a clock** (recorder count-in); uploads say "not checked" unless strictly confirmed |
+| **R46** | Hold = stillest 2 s | Picks the standing pause | Longest run in the target state, then the stillest 2 s in it |
+| **R47** | Safety gate on knee-over-toe angle + heel-down | Not measurable from the front; heel-down uncalibrated | **Knee alignment** = knee lateral offset vs the foot line ÷ hip width; heel-down "Not checked" |
+| **R48** | Reflection = x-flipped motion; overlap = suspect | Front mirrors; people behind | Both mirror geometries + opposite facing; overlap counts only at similar depth; SUSPECT_ID needs 2 track cues |
+| **R49** | A cut whenever the background moves | Handheld follow-pans | Continuous motion ≠ cut; roll per 2 s window; "handheld" preflight result |
+| **R50** | Per-user storage scope | Every demo login is id "1"; expiry never runs | **Student video is never kept.** Phase 2 crash-resume record encrypted with a tab-only key; sweep on every page |
+| **R51** | Hands-free anchor start/stop | iOS blocks late `play()`; gestures collide with choreography; children raise the wrong hand | **Tap to record**, unlock audio inside the tap, spoken countdown; stop by duration, tap, or walking out of frame |
+| **R52** | `setOptions` reset per cut | Rebuilds the whole graph (0.5–2 s each) | Timestamp jump for cuts; rebuild only for crop or mode changes |
+| **R53** | Per-window de-meaning inside sDTW | Not DP-decomposable | Relative dip test (Phase 1); offset-invariant features or iterate-and-refine (Tier C chains) |
+| **R54** | Pattern cards with nothing to play | No sound, no clock, no reference pane | **Generated practice track** (Web Audio clicks above 2 kHz, selectable tempo and ladder) + the 3D clip span mapped to slots |
+| **R55** | Ladder pairing by absolute pulse; BIC staircase | A rushing 1st speed looked like a ladder | Piecewise-linear sections; change point only for a ≥ √2 jump; pairing by neighbour ratios; with a clock, name the section that is off |
+| **R56** | Questions before the first take | About 12 prompts, mostly "Not sure" | Ask after the take, only to unlock a withheld tip, ≤ 2 per take |
 
 Remaining risks are in §13. They are accepted, not unhandled.
 
@@ -107,636 +140,592 @@ Remaining risks are in §13. They are accepted, not unhandled.
 
 ## 2. Inputs and extraction
 
-### 2.1 References ("Choose your reference")
+### 2.1 References
 
 Every reference becomes one object:
 
 ```
 Reference {style, steps[]}
-step = {name, cues[], kind: footwork|cyclic|nonCyclic|hold, modes, pattern?, lanes?, onsets?}
+step = {name, cues[], kind: general|footwork|hold, modes, pattern?, practiceTrack?, clipSpan?, lanes?}
 ```
 
-Pattern cards and studio references set `kind` and `pattern` by authoring. For teacher files the user chooses them; P3 adds a proposal. **The state classifier never decides a reference step's structure.**
+**`kind` is never chosen by a student** (round 3: a wrong "cyclic" choice switched off the whole event layer):
+- `general` by default;
+- `footwork` only when the step is a pattern card, or the student confirms the teacher's step is a named Thattadavu adavu;
+- `hold` when ≥ 60% of the marked step is still (automatic).
 
-**(a) Pattern cards (P2; no video).**
+**(a) Teacher file (Phase 1).**
+- `<input type=file accept="video/*">`, played from an object URL in our own `<video>`. Never uploaded.
+- **Rights line:** "Use videos you made or have permission to use."
+- Codec check, with the HEVC message.
+- **The step is the unit.** The picker asks "Mark just the step you'll practise (usually 10–40 s)". It defaults to 30 s around the playhead and shows the ETA live.
+  - Phase 1 cap: 2–60 s.
+  - Only the marked step is processed, so a 50-minute class file is fine.
+- **Phase 3:** 2–3 ranges with a combined cap of 3 min, for demonstrations spread across a class (for example 1st speed at 4:10 and 2nd/3rd at 10:50). Until then this is a known gap (§13).
+- **Phase 3, `.nvref` teacher packs:** a teacher or team member prepares a step once on desktop and exports the lanes plus the step JSON (a few MB). Students import it instead of each one trimming and processing the same file.
+- The creator helper text: "Your own YouTube video? Download it from YouTube Studio → Content → Download."
 
-- Person D writes them from the cues.
-- Slot durations are then checked against foot contacts in `thattadavu.nvclip`. A one-off Node script decodes the clip, puts it on the rig and reads foot heights. They are checked again against the studio reference when one exists.
-- Every card is labelled **"NrityaVaani version"**.
+**(b) Pattern cards (Phase 2; no video).**
 
-| Step | One full phrase (slot length in pulses, default 1; `_` = silent) | Start |
+| Step | One full phrase (slot length in pulses; `_` = silent) | Start |
 |---|---|---|
 | Adavu 1 | R L | R |
 | Adavu 2 | R R · L L | R |
 | Adavu 3 | R R R · L L L | R |
 | Adavu 4 | R R R R · L L L L | R |
-| Adavu 5 | R² R² R R R _ · L² L² L L L _ (lengths from the clip) | R |
+| Adavu 5 | R² R² R R R _ · L² L² L L L _ (lengths measured from the clip) | R |
 | Adavu 6 | R R R _ R R R _ · L L L _ L L L _ | R |
 | Adavu 7 | R R R L R R R _ · L L L R L L L _ | R |
-| Adavu 8 | R L R L R⅔ L⅔ R⅔ _ · L R L R L⅔ R⅔ L⅔ _ | R |
+| Adavu 8 | R L R L + 3 quick + rest, per half-phrase (**slot lengths measured from the clip**) | R |
 | Tapping (Namaskaram) | R L (tap events) | R |
 
-Ladder metadata comes from the cues. Example, Adavu 1: speeds 1→2→3→2→1, ratio 2 between neighbouring speeds.
+- Written by person D from the cues.
+- **Every card's slot lengths are measured** from foot contacts in `thattadavu.nvclip`: a Node script decodes the clip, puts it on the rig and reads foot heights.
+- A unit test asserts that each half-phrase sums to the counts the cue states (Adavu 8: 8 counts with count 8 silent). The reviewer signs off each card.
+- Labelled **"NrityaVaani version"**.
+- **Ladder metadata:** Adavu 1 from its cue (1→2→3→2→1). Adavu 2–8 get ladder metadata from the "Practising" cue ("every adavu through the three speeds") **only after the reviewer confirms it**. Until then the student is asked "Are you doing the speeds?" after the take.
+- **Practice track (R54).** Web Audio generates tattukazhi-style clicks from the slot table on the device, with silent slots left silent.
+  - Tempo is selectable (slow / medium / normal), with the speed ladder where the card has one.
+  - Clicks are **above 2 kHz** and the known click train is subtracted before stamp detection.
+  - Loops are sample-accurate and phrase-aligned: no video seam.
+  - It is the **clock** for loops, auto-stop and "Show me ▸ count 5 of phrase 2". It also avoids music rights.
+- **Reference pane:** the 3D figure from `thattadavu.nvclip` over that adavu's span (e.g. Adavu 3 = 108.1–130.3 s), labelled **"animation, not compared"**.
+  - Card slots map to clip times through the same foot-contact times the verification script reads.
+  - The ghost is off for pattern cards.
+  - The 3D figure runs in Learn and Feedback only, **never while the camera and pose model run**, so it doesn't compete for the GPU.
 
-**(b) Studio references (P2, if the dancer is recorded).**
+**(c) Studio references (Phase 3, if a dancer is recorded).**
+- Front view at hip height, fitted clothes, full body, real side, the speeds the cues ask for. Baked on a desktop GPU.
+- **Consent:** written; **a guardian's consent if the dancer is under 18**; a withdrawal clause.
+- **Media outside git:** per-step clips of 5–40 s, hosted as GitHub Release assets or on an R2/B2 bucket with CORS, so they can be taken down. Only lanes and manifests go in the repo.
+- **Audio:** original only (a team member reciting sollukattu, or the generated practice track). Never commercial recordings.
 
-- **Recording:** front view at hip height, fitted clothes, full body, real side (she begins on the right), and the speeds the cues ask for.
-- **Bake:** on a desktop with the **GPU delegate**, at both `full` and `heavy`.
-- **What ships:**
-  - raw lanes, kinds, cues, modes and templates;
-  - **pre-computed stamp onset times**, so teacher audio is never decoded on a student's device;
-  - a 540p MP4, published with the dancer's written consent.
-- **Extra recording:** the Namaskaram mudra steps are also recorded as close-up hand clips for v2.
+**(d) YouTube link (Phase 3).** See §8.
 
-**(c) Teacher file (P1).**
-
-- `<input type=file accept="video/*">`, played from an object URL in our own `<video>`. The file is never uploaded.
-- **Rights attestation** checkbox. Codec check, with the HEVC message.
-- **No cap on the source file.** A 50-minute class recording is fine. The cap is on what gets processed: **one range of ≤ 3 min in P1** (up to 3 ranges in v2), picked with a thumbnail scrubber.
-- P0 tests a 4 GB file on iOS and Android.
-- The creator helper text ("Download your own video from YouTube Studio") and the iOS "preparing your video" note stay.
-
-**(d) YouTube link (P3).** See §8.
-
-**(e) 3D rig lessons as references.** v2.
+**(e) 3D rig lessons as compared references:** v2.
 
 ### 2.2 Student takes
 
-#### Recorder (P1; the default where supported)
+#### Upload (Phase 1)
 
-**Feature detection.** The recorder needs a secure context, `mediaDevices.getUserMedia`, `MediaRecorder`, and must not be running in an in-app browser (WhatsApp, Instagram, FB; checked by UA plus a feature test). If any of these fail, the default card becomes "Upload a take". For in-app browsers we show "Open in Chrome/Safari" with a copy-link button.
+- `<input type=file accept="video/*">`. On phones the same input offers the **phone's own camera app**. This gives a recorder with no MediaRecorder engineering.
+- Up to 3 min. In/out handles are optional; approach frames are found automatically (§3 F1).
+- **Quality warning:** height under 480 px, or fewer than 10 frames per second processed.
+- **Mirroring unknown** for uploads, so no side words are used (§4.8).
+
+#### Recorder (Phase 2; the default where supported)
+
+**Feature detection.** It needs:
+- a secure context, `getUserMedia` and `MediaRecorder`;
+- not an in-app browser (WhatsApp, Instagram, FB). Those get "Open in Chrome/Safari" plus a copy-link button.
+
+If any check fails, the default becomes Upload.
+
+**Start: tap to record (R51).** Everything is unlocked **inside the Record tap**:
+1. Create and resume one `AudioContext`.
+2. Decode the practice track or the teacher's audio into buffers.
+3. Mute the teacher video elements and prime them with `play()` then `pause()`.
+
+All sound (countdown beeps, practice track, teacher audio) then plays **through that one AudioContext**. That sound is never blocked later, and loops are gapless. A spoken "5-4-3-2-1" plays, then recording starts. If anything is still blocked, a big **"Tap to start sound"** button appears (its own error row).
+
+**Stop:**
+- a duration chosen from the loop unit (default about 30 s);
+- or tap Stop;
+- or **walking out of frame for 2 s** (a gesture that never appears in choreography), with a spoken "Stopping" and a 2 s grace period to step back in.
+
+The raised-hand start anchor and the hands-overhead stop are **removed**: they collided with anjali and Shikhara, and with iOS autoplay rules.
 
 **Permissions.**
-- **Camera first** (`video` only).
-- **Microphone is a separate opt-in:** "Use the microphone to time your strikes".
-  - Off by default on iOS until P0 confirms that teacher playback still works with the mic open.
-  - Constraints: `{echoCancellation:false, noiseSuppression:false, autoGainControl:false}`. `track.getSettings()` is checked to see which were honoured.
-  - The built-in mic `deviceId` is preferred. If a headset or Bluetooth input is selected, we show a warning.
-- **Denied, busy, missing and unsupported** each get their own error row (§7).
+- Camera first.
+- **Microphone is an opt-in:** "Use the microphone to time your stamps". It is constrained with `{echoCancellation:false, noiseSuppression:false, autoGainControl:false}`, and `getSettings()` is checked to see which were honoured.
 
-**Setup screen (live framing check).** Full model, IMAGE mode, about 5 fps. It shows a ✓/✗ list:
+**Setup screen.** A live framing check at about 5 fps (IMAGE mode) with a ✓/✗ list:
 - feet visible;
-- one dancer (extra people classified as in §2.5);
+- one dancer;
 - size in pixels;
-- **effective frame rate and brightness**: "Too dark: your camera is recording at 12 fps; add front light";
-- an **arms-out check pose** for natyarambhe or Natta steps, with fingertips inside the frame;
-- **background motion while you stand still**, which means auto-framing, Center Stage or background effects are on. We give per-OS steps to turn them off.
+- effective fps and brightness;
+- background motion while standing still (auto-framing, Center Stage);
+- **"Phone moving: prop it against something for footwork feedback"** (R49).
 
 **Mode.**
-- **"Big screen (laptop/TV): dance along."** After the countdown the teacher fills the screen, mirrored per §4.8. Your own preview is hidden except for a small framing badge that turns red if your feet leave the frame.
-- **"Phone: dance to the sound."** The teacher's audio plays after a spoken count-in. Copy: "Learn the step in Learn first, then record to the sound."
-- **Early/late timing against the teacher** (§4.9) is claimed only for big-screen dance-along takes.
+- **Teacher file:** "Big screen: dance along". The teacher video fills the screen, with sound from the AudioContext and a small framing badge.
+- **Pattern card:** the practice track plays. The screen shows a **2D pattern strip with a "next foot" cue**, not the 3D figure.
+- **Phone at 3 m:** "Dance to the sound". The practice track is the sound for pattern cards. For teacher files, it's the teacher's audio.
+- **Never** "use headphones": a cable doesn't reach 3 m, and Bluetooth may switch to a low-quality call mode.
 
-**Hands-free.**
-- **Start:** the right-hand anchor, raised for 2 s and detected live, then a spoken 3-2-1.
-- **Stop:** whichever comes first:
-  - the chosen number of loops (default: 3 phrases for footwork, usually 15–45 s);
-  - both hands overhead for 2 s;
-  - 2 min.
-- **Approach frames are trimmed automatically:** frames where the dancer's screen height grows steadily (walking to or from the camera) and frames where the ankles leave the frame.
+**Loop unit per step** (round 3 found seams eating most strikes):
+- **ladder steps:** the whole authored sequence (Adavu 1 = 1→2→3→2→1);
+- **single-speed steps:** the smallest number of phrases lasting ≥ 8 s.
 
-**Loop.**
-- Loop points are **snapped to whole phrases**. They are authored for pattern cards and studio references. For teacher files they come from the teacher's strike string once the step is baked; if that string isn't available, the seam is flagged.
-- Looping is gapless: two `<video>` elements are pre-seeked to the loop start and alternate at the seam.
-- Every clock sample logs `{teacherTime, loopIteration, performance.now(), captureTime}`.
-- **Student strikes within 1 s after a seam are excluded** from the pattern statistics and from early/late.
+Practice-track loops are gapless on a phrase boundary, so nothing is excluded. Teacher-video loops (one element that seeks at the loop end) exclude strikes for min(1 s, ½ phrase) after the seam. Those strikes are kept in the alignment as **masked** (§4.2).
 
-**Laterality check.** Raw frames are assumed unmirrored, but this is **verified**: the image-side wrist raised during the anchor must agree. Track labels containing "OBS", "Virtual" or "Snap" trigger a warning. If they disagree, laterality is unknown and we say "Your camera may be mirrored".
-
-**Live detection (P2).**
-- **When:** if the device benchmark is ≤ 0.6 × the frame budget at the target fps (typically laptops with a GPU), pose runs **live during recording** in VIDEO mode with capture timestamps. Feedback is ready seconds after Stop.
-- **Otherwise:** the take is baked after Stop, and the expected wait is shown **before** recording ("about 1 min for a 20 s take").
+**Live pose during recording:** only for the framing badge. **Tips always come from the bake of the recorded file** after Stop, with the same reader and fps as calibration. Live-detected tips are v2 (round 3: the live path is load-dependent and uncalibrated).
 
 **After Stop.**
-1. **Remux once with Mediabunny** (Conversion, no re-encode) into MP4 with the moov at the front, or WebM with cues and a duration. From here on, recorder takes are seekable files that use the same reader as uploads (§2.3).
-2. **Write the remuxed take to IndexedDB** as a temp record.
-   - Before recording, `navigator.storage.estimate()` is checked (a 2 min take is about 40 MB).
-   - The record is deleted after a successful bake unless the student taps Keep. Hard expiry: 24 h.
-   - After a reload: "Resume processing your last take". If the record is gone: "Your take was lost because the browser closed the tab."
+1. Remux once with Mediabunny (no re-encode) into a seekable file.
+2. **Crash-resume record (R50):**
+   - the take is written to IndexedDB **encrypted with an AES key held in `sessionStorage`**;
+   - a reload in the same tab can resume, but once the tab closes the record can't be read;
+   - it is deleted after the bake, and by a **sweep that runs from the root layout on every page load**, not only on `/compare`.
+3. **There is no "Keep".** Student videos are never kept. Only a text summary (bands, tips, date) can be saved (§2.7).
 
-A recording indicator is always visible. **"Delete all my takes and analyses"** is on `/compare` and `/privacy`.
-
-#### Upload a take (P1)
-
-- **Camera question:** back / front / laptop / not sure, preselected "not sure". QuickTime lens metadata can pre-answer it.
-- **Quality warning:** bitrate under 2 Mbps or height under 600 px.
-- The recording guide asks for the anchor at the start.
-- **Resume:** checkpoints are keyed by the file hash, so picking the file again resumes the bake. The copy says plainly that resuming needs the file picked again.
+**Laterality.** Raw `getUserMedia` frames are unmirrored, since preview mirroring is CSS only, so recorder takes have known laterality. The exception: tracks whose label contains "OBS", "Virtual" or "Snap" get "laterality unknown".
 
 #### Recording guide
 
-- **Setup:** hip height, 2.5–3 m away, whole body including feet, front light.
-- **People:** only you dancing. Mirror walls and posters are fine; we ignore them.
-- **Clothing and floor:** fitted clothes or pleats tucked; **a hard floor so strikes are audible**.
-- **Camera effects:** auto-framing, Center Stage and background effects off.
-- **Orientation:**
-  - **landscape** for natyarambhe, Natta and other arm-wide steps;
-  - **portrait** allowed for Thattadavu (hands on waist) and for mudra close-ups;
-  - preflight explains this if the arms clip.
+- **Setup:** hip height, 2.5–3 m away, whole body including feet, front light, phone propped (not handheld).
+- **People:** only you dancing. Other people and mirrors may confuse the tracker, and the app warns when it sees them.
+- **Clothing and floor:** fitted clothes or pleats tucked; a hard floor if you use the microphone.
+- **Distance by height:** "Stand where your feet and raised hands just fit", so children fill the frame.
+- **Orientation:** landscape for arm-wide steps; portrait is OK for Thattadavu (hands on waist).
 
-#### Audio policy (the single place where audio rules live)
+#### Audio policy (Phase 2 = minimal; Phase 3 = full)
 
-Audio is used only when it is clean. **With audio off, everything still runs from pose.** Only 3rd-speed rhythm, evenness at 2nd speed, and confirmation of silent counts abstain.
+With audio off, everything still runs from pose. Audio only **confirms or adds** strikes.
 
-| Check | Mechanism | If it fails |
-|---|---|---|
-| Teacher sound in the room | Cross-correlate the recording with the known teacher audio (the latency search covers 0–400 ms) | Audio off: "Use headphones for rhythm feedback". No onsets are dropped by time window. |
-| Music or ankle bells | Low spectral flatness over > 50% of frames, an onset train periodic far above the pose strike rate, or > 30% of onsets with no pose landing | Audio off: "Music was playing: rhythm judged from your feet only" |
-| Stamp vs other sound | Onset envelope on a **40–300 Hz band** with a broadband-transient check, which ignores bell jingle and most cymbals | — |
-| Clock offset | Per-take pose→audio offset from cross-correlating the landing train with the stamp envelope over ±250 ms. Pairing within ±40 ms of that offset. Peak / second peak must be ≥ 1.5. | Refinement off for this take |
-| Following an external clock | After offset removal, > 30% of refined strikes move > 40 ms in the same direction | Refinement discarded |
-| YouTube mode | Takes are recorded **video-only** | — |
+| Check | Phase | Mechanism | If it fails |
+|---|---|---|---|
+| Our own sound in the recording | 2 | The click train (above 2 kHz) is known and subtracted. For teacher audio, bleed is measured **only in the 40–300 Hz stamp band**, after the per-take latency search. | Audio off for confirmation only |
+| Voice (sollukattu aloud) | 2 | Harmonicity/pitch detection. Onsets inside voiced segments are ignored. The take gets a "voice present" flag. | Voice-present takes aren't compared with voice-free takes for progress |
+| Music or ankle bells | 3 | Spectral flatness, or periodic onsets far above the pose strike rate | "Music was playing: rhythm judged from your feet only" |
+| Clock offset | 2 | Per-take pose→audio cross-correlation over ±250 ms, with peak/second peak ≥ 1.5 | Refinement off |
+| YouTube mode | 3 | Takes are video-only | — |
 
 ### 2.3 Reader and bake
 
-**Reader (P1).**
-- **Primary:** Mediabunny decodes sequentially over the range via WebCodecs. CanvasSink applies the rotation, so frames are upright, at ≤ 960 px on the long side for pose.
-- **Fallback** when `VideoDecoder` or the codec is missing (Firefox Android, some HEVC): the seek loop on the seekable or remuxed file. It waits for `seeked` + rVFC and stores `metadata.mediaTime`. A 400 ms timeout marks the sample `INTERP`.
-- Playback-driven reading is gone.
+**Phase 1 reader: playback-driven.**
+- The video plays muted, and `requestVideoFrameCallback` gives each frame its `mediaTime`. The model runs on as many frames as the device manages.
+- If fewer than 10 frames per video-second are processed, playback drops to 0.5×, then 0.25×.
+- Fallback: a seek loop (wait for `seeked`, then rVFC) where rVFC is missing.
+- Irregular sampling is fine here: Phase 1 judges posture on a resampled 15 fps grid and makes no strike claims.
 
-**Effective frame rate.**
-- The source frame interval is measured per shot, from distinct packet timestamps or mediaTimes.
-- **Bake fps = min(target, effective).** Targets that resolve to an already-processed frame (same timestamp or same frame hash) are skipped, so VIDEO-mode timestamps never repeat.
-- The effective interval feeds the rhythm noise floor (§5.3) and the fps gate (§4.1).
+**Phase 2 reader: deterministic.** Footwork needs fixed sampling that matches calibration.
+- Mediabunny decodes sequentially via WebCodecs. CanvasSink applies the rotation, at ≤ 960 px on the long side.
+- Fallback: the seek loop.
+- **Bake fps = min(24 target, effective source fps).** Targets that resolve to an already-processed frame are skipped, so VIDEO-mode timestamps never repeat.
 
-**Passes.**
-- **P1, teacher:** the whole prepared range (≤ 3 min) is baked in detail at **15 fps**, `full` model. **The skeleton exists over the whole range.** The timeline shows coverage.
-- **P2:** a step tagged footwork is re-baked at 24 fps if the source allows.
-- **P3, structure pass:** lite, 4 fps, for the state timeline and step proposals.
-  - Spans outside detailed bakes show a **"preview skeleton"** (interpolated, labelled) and a "Process the whole range in detail" button with an ETA.
-  - The footwork tag comes from the **audio stamp rate** or a "This step has footwork" toggle, defaulting to on when leg energy is high. It is never taken from 4 fps lift counts.
-- **Student take:** same tier as the reference, at min(target fps, effective fps), ≤ 2 min.
+**One job at a time.**
+- A single-consumer queue owns the VIDEO-mode landmarker, with priority student take > teacher step > background jobs.
+- Preempting means checkpoint, timestamp jump, run the other job, timestamp jump, then resume.
+- The UI says "Teacher preparation paused while we check your take".
+- Unit-tested with a fake landmarker.
 
-**After detection.**
-- Uniform-grid resampling after cleaning (unchanged).
-- The bake yields after every frame. Learn plays the raw video during a bake, and pauses itself if the decoders contend.
-- Wake Lock, a checkpoint every 150 samples, and a pause when the tab is hidden.
-
-**Worker.** The shim is tested in P0. The worker itself is v2 unless P0 shows the main thread can't cope.
+**During a bake:**
+- the raw video stays playable;
+- Wake Lock is held;
+- it pauses when the tab is hidden ("Keep this tab open");
+- a checkpoint is written every 150 samples (Phase 2).
 
 ### 2.4 Models, pool, delegate, tier, timestamps
 
-**Pool.**
-- At most **3 live instances**, one per (model, runningMode, numPoses):
-  - `full/VIDEO/1` for bakes and live detection;
-  - `full/IMAGE/3` for preflight, framing, the identity check, re-acquire and the picker;
-  - `lite/VIDEO/2` for the P3 structure pass only.
-- A `?debug=1` assertion enforces the cap.
-- **Reset** between videos, passes, shots and crop changes with `setOptions(...)`, which rebuilds the graph inside the same WASM module.
-- **Timestamps** come from one session-wide monotonic clock: `ts = sessionBase + frameMs`. `sessionBase` jumps 10⁷ ms past the last stamp on every reset, so timestamps never have to restart.
-- **P0 checks:**
-  - that `setOptions` resets tracking and smoothing;
-  - a soak test: 30 resets × 3 bakes on an iPhone, memory must stay flat.
+**Pool.** At most 2 live instances:
+- `full / VIDEO / numPoses 2` for bakes;
+- `full / IMAGE / 3` for preflight, the framing check and the picker (Phase 2+).
+
+**Timestamps.**
+- One session-wide monotonic clock: `ts = sessionBase + frameMs`.
+- **Between videos and at cuts (R52):** `sessionBase` jumps 10 s past the last stamp. A gap of seconds makes the built-in One-Euro filter effectively reset, and VIDEO mode re-runs detection when tracking confidence drops. So no graph rebuild is needed.
+- `setOptions` (which re-serialises the 9.4 MB model and recompiles GPU shaders, 0.5–2 s) is used **only for crop or mode changes**. Its latency is measured and included in the ETA.
 
 **Delegate.**
-- Create on GPU, then run a 64 KB known-good image.
-- On failure, use CPU at 10 fps. The pattern tips are then subject to the fps gate in §4.1.
-- `webglcontextlost` → recreate from the last checkpoint, within the cap.
+- Create on GPU, then run a known-good test image.
+- On failure, use CPU (and footwork gets the fps gate).
+- `webglcontextlost` → recreate and resume.
 - A device failure is never reported as "no dancer".
 
-**Tier.**
-- `full` by default.
-- `heavy` only on desktop, offered when `full` runs at < 25 ms per frame.
-- `heavy` is never fetched on a mobile UA or under `saveData`.
-- The tier is fixed per project.
+**Tier.** `full` everywhere. `heavy` is optional on desktop only (Phase 3), and is fixed per project.
 
-**Downloads.**
-- The usual flow is the WASM (11.5 MB) plus `full` (9.4 MB).
-- `lite` is fetched only for the P3 structure pass.
-- On cellular, the size is shown before the first prefetch.
+**Downloads.** WASM (~11.5 MB, jsDelivr) plus `full` (~9.4 MB, Google). The size is shown on cellular. Self-hosting both on Netlify is an option that removes those two third parties (§12 decision).
 
 ### 2.5 Preflight, people, identity, cuts
 
-**Preflight.** It runs live in the recorder. For uploads it uses 8 frames sampled across the **whole** range.
+**Phase 1 (simple and honest).**
+- `numPoses: 2`. Start with the biggest, most central body with ankles in frame. Then follow the body with the nearest hip centre **and** a box height within 25% of the last frame's.
+- **Warning** "Someone else is in the video; results may mix you up" when a second body is **at similar depth** (box height within 25% and feet at a similar image y) for ≥ 20% of frames. People who are smaller and higher in the image are behind the dancer: they are tracked past, not warned about.
+- **Facing continuity:** never jump to a body facing the other way (nose/eye/ear visibility). This keeps a mirror reflection from taking over.
+- Landmarks outside [0.02, 0.98] of the frame count as **out of frame**, whatever their visibility.
 
-- **Active area.** Only **edge-contiguous bands that are near-uniform in colour** (low per-row or per-column variance) **and unchanged across the whole range** are cropped; that covers letterbox and pillarbox. Textured static content is never cropped. Test: a tripod clip with a still start and arms opened later gives the full frame.
-- **Size in source pixels:** ≥ 240 px OK; 160–240 px legs only, low confidence; < 160 px not usable.
-- **Other checks:**
-  - ankles visible in ≥ 70% of frames;
-  - orientation;
-  - the anchor;
-  - view ratio within ±35% of the reference;
-  - effective fps and brightness;
-  - the clothing question.
-- **Geometric in-frame gate.** A landmark outside [0.02, 0.98] of the upright frame is **not judged, whatever its visibility**. The reason shown is "out of frame".
-
-**Extra people (P1).** Every extra detection, from `full/IMAGE/3` on the preflight frames and at 1 Hz during the bake, is classified:
+**Phase 3 (full classes).** Every extra detection (IMAGE/3 on preflight frames and at 1 Hz) is classified:
 
 | Class | Rule | Action |
 |---|---|---|
-| Static (poster, photo) | Centroid and pose variance ≈ 0 across samples | Ignored |
-| Reflection (mirror wall) | Motion correlates ≥ 0.8 with the dancer's after a left/right flip | Ignored |
-| Blur-fill copy | Same centroid, 1.3–3× the scale, low sharpness | Ignored; automatic crop to the sharp pillar |
-| Split-screen | A static vertical seam divides the active area | Each pane is a source: "Which view?" |
-| Moving person | Otherwise | **Tap-to-pick**, for teacher files and student uploads alike. The default is the largest, nearest-centre, sharpest person with ankles in frame (in class videos, the teacher in front). A **fixed crop** around them for each shot. |
+| Static (poster, photo) | Centroid and pose variance ≈ 0 | Ignored |
+| **Side-mirror reflection** | Motion correlates ≥ 0.8 with the dancer's after an x-flip | Ignored |
+| **Front-mirror reflection** (R48) | Motion correlates ≥ 0.8 **without** a flip, **opposite facing**, smaller scale | Ignored; never re-acquired |
+| Blur-fill copy | Same centroid, 1.3–3× scale, low sharpness | Crop to the sharp pillar |
+| **PiP inset / on-screen graphics** | A fixed rectangle with internal motion; or high-edge-density static/blinking text regions | "Use main view / Use inset"; landmarks under graphics = **occluded** |
+| Split-screen | A static vertical seam | "Which view?" |
+| Moving person | Otherwise | Tap to pick |
 
-Only moving people count towards the identity overlap test.
+**Crop (Phase 3).** The **union of the picked person's boxes over the shot**, from a quick 1 Hz pre-scan. If they move outside it, the shot is split into crop segments, and each change counts as a reset. Inside a crop that contains others, `numPoses 2` is kept and the dancer is chosen by signature.
 
-**Identity signature.**
-- Built from the anchor or the picked person's first still 2 s.
-- It holds a 3D world bone-length vector (`measureSkeleton` over those frames) and an HSV histogram of the torso box.
-- The skeleton median used for identity always comes from the signature, never from the take.
+**Identity (Phase 3).**
+- **Signature per facing** (front and back, each filled in the first time it is seen). Colour is **chromaticity only** (grey-world corrected), and bone **ratios** are taken only for limbs roughly parallel to the image plane (screen length agrees with world length).
+- **`SUSPECT_ID` needs two independent track cues:** a landmark jump, a signature mismatch, or a raw bone residual. Co-presence alone never sets it, and appearance alone never switches the crop while the landmarks stay continuous.
 
-**Identity tests (rotation-invariant).**
-- **`SUSPECT_ID`** when any of these holds:
-  - world bone lengths deviate > 15% from the signature for ≥ 3 samples;
-  - the torso histogram distance (Bhattacharyya) is > 0.5;
-  - a moving person overlaps the dancer's box by > 30%.
-- Changes in screen width or length alone (turns, bows, kneeling) **never** set `SUSPECT_ID`. Low visibility there sets **`POSE_HARD`**, shown as "pose hard to see".
+**Cuts and camera motion (R49).**
+- **Discrete reframing** (a step change, then stable) is a cut: timestamp jump, drop ±1 sample.
+- **Continuous camera motion** (a smooth global motion, as in a handheld follow-pan) is **not** a cut. Roll is then estimated per 2 s window on upright frames, σ_j is widened, and preflight says "handheld".
+- A median shot under 4 s → posture only, with that reason shown.
 
-**Re-acquire.**
-1. When `SUSPECT_ID` lasts ≥ 3 samples, run `full/IMAGE/3` on that frame and pick the candidate nearest the signature.
-2. If that candidate is a different detection from the one being tracked, continue with a fixed crop around it. The crop change counts as a reset.
-3. If she isn't found for > 2 s, mark a "lost you" gap and retry every second.
-
-Group stage videos get a "trim to a solo section" warning.
-
-**Cuts.**
-- A cut is a thumbnail difference > 0.25 **and** (a bbox jump > 30% **or** a scale change > 30%). It resets the tracker and drops ±1 sample.
-- **Reframing in the middle of a take** (auto-framing) is background motion outside the person mask while the dancer's world pose stays steady. It is treated as a cut.
-- A median shot under 4 s → posture only.
-- `CLOSEUP` and `HANDS_CLOSEUP` are as before.
-
-**Shot view and facing (teacher files).**
-- Each shot is classed by its pre-correction yaw and shoulder/torso ratio. Templates and Tier A use **only shots within 25° of the student's view**, shown as "front-camera reps used: 4 of 7". Otherwise the nearest view is used with depth features off.
-- **Facing** is tracked per shot and section from nose, eye and ear visibility. Each change to back view is confirmed once ("Your teacher turned away here: same side as before?"), and that section's image→anatomy mapping is flipped (§4.8).
+**Shot view and facing (teacher files).** Shots more than 30° of yaw from the student's view switch off 2D-only features. A change of facing is confirmed once (Phase 3), and that section's L/R mapping is flipped.
 
 ### 2.6 Cleaning and camera correction
 
-Per shot, in this order:
+| Lane use | Cleaning |
+|---|---|
+| **Overlay (drawing the skeleton)** | `despikeTrack` → `stabiliseTrack` → `smoothTrack(1)` (looks steady) |
+| **Posture features (Phase 1+)** | MediaPipe's own filter + a 3-sample median per feature. **No** despike or stabilise. |
+| **Strike events (Phase 2, R42)** | **Raw** ankle, heel and foot_index lanes (MediaPipe's own filter only). Despike only jumps > 0.25 m between samples, which are physically impossible. **σ_j is measured on raw still frames.** |
 
-1. **L/R swap repair** (`SWAP`).
-2. `measureSkeleton` → `enforceSkeleton`, keeping the raw residual.
-3. `despikeTrack` → `stabiliseTrack(…, 12/fps)` → `smoothTrack(1)`.
-4. Screen landmarks are cleaned too.
-5. Gaps of ≤ 3 samples are interpolated (`INTERP`).
-6. `GLITCH` = residual > 25%.
-7. Resample onto the uniform grid.
-8. **Gravity frame:**
-   - roll from the mid-ankle → mid-shoulder axis on upright still frames, with the heel line as a backup;
-   - approximate pitch;
-   - one yaw per shot;
-   - tilt chips and gates as before.
-9. **Leg reliability score** (jitter, bone residual, knee outside the hip–ankle cone). A low score, or the clothing answer "saree/skirt", turns off turnout, knee angle, heel gap and knee-over-toe. It keeps planted hipDrop with its dead band +0.03.
+- Gaps of ≤ 3 samples are interpolated and flagged `INTERP` (never used as strike evidence).
+- Resample onto the uniform grid.
+- **Roll correction** (Phase 2 footwork): per 2 s window on upright frames, from the mid-ankle → mid-shoulder axis, with the heel line as a backup.
+- **Phase 1 needs no roll correction:** its features are roll-invariant by construction (§5.1).
+- **Leg reliability score** (jitter, bone residual, knee outside the hip–ankle cone). A low score turns off knee angle, knee spread and knee alignment.
+- **Test:** 2-sample, 3 cm lifts injected into raw lanes at 24, 15 and 10 fps must survive the full load → clean → events path.
 
 The pure track functions move to a three.js-free `lib/motion/track.ts`, re-exported from `retarget.ts`.
 
-### 2.7 Storage, privacy and deletion
+### 2.7 Storage, privacy and deletion (R50)
 
-**IndexedDB `nrityavaani-compare`.**
-- Stores: `bakes`, `projects`, `takes`, `checkpoints`.
-- **Every key is prefixed with the user scope:** the signed-in user id, or `guest`.
+**The rule: video of a student is never kept.** With a shared demo login (user id "1") and no real accounts, per-user storage can't protect anyone, so nothing about the student's video is stored.
 
-**NVB2 bake.**
+| Data | Phase | Where | Lifetime |
+|---|---|---|---|
+| Student video + its landmarks | 1 | Memory only | Gone when you leave the page |
+| Student crash-resume record | 2 | IndexedDB, **AES-encrypted, key in `sessionStorage`** | Unreadable once the tab closes; deleted after the bake or by the sweep on the next page load |
+| Teacher step landmarks ("Save this teacher step") | 1 | IndexedDB, opt-in | Until "Delete saved steps" (on `/compare` and `/privacy`) |
+| Text summary (bands, tip ids, date, step name) | 2 | `localStorage` key `nv_compare_sessions`, **separate from `nv_sessions`** | Until deleted. Never mixed with mudra stats, so `/dashboard` and mastery counts stay right. |
+
+**NVB2 format (teacher bakes, Phase 1+):**
 - `"NVB2"` + u32 header length + JSON header + raw lanes.
-- **Header:** `{v, key, configHash, tier, delegate, fps, effectiveFps, ranges, activeArea, upright, rotation, shots[{t0,t1,roll,pitch,yaw,crop?,facing}], clothing, laterality, signature}`.
-- **Lanes:**
-  - `flags u16`;
-  - `times f32`;
-  - `poseWorld f32[n·33·4]`;
-  - `presence`;
-  - `poseScreen f32[n·33·2]`;
-  - `stampOnsets f32[]`.
-- Cleaning, features and alignment are recomputed on load, so changing them never needs a re-bake.
+- **Header:** `{v, key, configHash, tier, delegate, fps, effectiveFps, range, rotation, laterality}`.
+- **Lanes:** `flags u16`, `times f32`, `poseWorld f32[n·33·4]`, `poseScreen f32[n·33·2]`.
+- Cleaning and features are recomputed on load.
 
-**Bake key.** `sha256(size ‖ first 4 MB ‖ last 4 MB)` + ranges + `configHash`. FNV fallback, and a fuzzy match for iOS transcodes.
-
-**Retention.**
-- Kept takes expire after **7 days** unless kept again. Temp takes expire after 24 h.
-- "Shared computer? Don't keep takes" sits next to Keep.
-- **Delete all my takes and analyses** is on `/compare` and `/privacy`.
-- `navigator.storage.persist()` is requested after the first bake. Copy: "Safari may clear it after 7 days unused."
-
-**StatsService.** Gets `kind: "mudra" | "compare"`, and `/dashboard` filters on it.
-
-**`/privacy` rewrite (P1, shipped with the recorder).**
-- "No Recording or Surveillance" becomes: "Takes are recorded on your device only. They stay in memory, and briefly in your browser storage while processing, until you leave. They are saved only if you tap Keep, and kept takes expire after 7 days. The microphone is optional and used only to time your strikes."
-- The delete control is described.
-- The YouTube and edge-tts sections are added in P3.
+**`/privacy` changes (shipped with Phase 1):**
+- "Videos you use in Compare are processed on this device. They are never uploaded, and your own videos are never saved. A teacher step's stick-figure data is saved only if you choose, and you can delete it."
+- "Model files are downloaded from Google and jsDelivr when you first use a camera or video feature; no video or images are sent." (Removed if we self-host.)
+- **Phase 2 adds:** "If processing is interrupted, your take is held in this browser in encrypted form until the tab closes."
+- **Phase 3 adds:** YouTube and edge-tts disclosures (§8).
 
 ---
 
 ## 3. "Not all movement is necessary": what gets judged
 
-### F1. Human trim
+### F1. Human trim and automatic edges
 
-Teacher: one range in P1, up to 3 in v2. Student: in/out handles plus automatic approach trimming.
+- **Teacher:** you mark one step (Phase 1). Several ranges come in Phase 3.
+- **Student:**
+  - optional in/out handles;
+  - automatic: frames with no full body, frames where the dancer's screen height grows or shrinks steadily (walking to or from the camera), and frames where the ankles leave the frame are dropped from the edges;
+  - **the step search (§4.7) ignores everything outside the match anyway.**
 
-### F2. Automatic states (teacher timeline in P3)
+### F2. Pauses inside a step
 
-States are computed in 1 s windows with a 0.5 s hop. E_group is the 90th percentile of speed ÷ torso length per second over that group's joints.
+**Phase 1 (general path):**
+- **Teacher pause:** a run of ≥ 1.5 s where the whole body is still, **inside a step that is otherwise moving** (still < 60% of the step). It stays in the alignment but is excluded from scoring.
+- **Student pause:** the same rule inside the matched span. Shown as "pause (not judged)", with a restore button.
+- If ≥ 60% of the step is still, it is a **hold step**, and stillness is the point (F5).
 
-Precedence: `CUT > NOT_VISIBLE > SUSPECT_ID > DANCE / HOLD / STANDING_HOLD / ARM_DEMO > TALK`.
+**Phase 2 (footwork):** inside marked footwork spans, frames outside any **strike run** are excluded. A run ends when a gap exceeds 2 slot durations at the local tempo **and** the dancer is upright and still for ≥ 1.5 s. This handles the teacher saying "now twice as fast" between speeds, and a student catching her breath.
+
+**States (Phase 3, teacher-file timeline).** States are computed in 1 s windows with a 0.5 s hop, with E_group the 90th percentile of speed ÷ torso length.
 
 | State | Rule |
 |---|---|
-| `NOT_VISIBLE` | LOST, no pose, CLOSEUP, or dancer < 160 px |
+| `NOT_VISIBLE` | No pose, close-up, or dancer < 160 px |
 | `ARAMANDI` | Planted hipDrop ≥ 0.08 and knee spread ≥ 1.3 × hip width |
 | `HOLD` | ARAMANDI and E_legs below the take's 30th percentile |
-| **`STANDING_HOLD`** | Upright, E_legs < 0.1, E_arms < 0.2, for ≥ 2 s, **and** the arms are posed: wrists joined within 0.15 torso, both wrists above mid-torso, or hands on the waist |
+| `STANDING_HOLD` | Upright, still, **and** the arms are posed (joined wrists, both above mid-torso, or hands on the waist) for ≥ 2 s |
 | `ARM_DEMO` | Upright and E_arms ≥ 0.3 |
-| `DANCE` | E_legs above the take's 50th percentile of non-still windows, or ARAMANDI ≥ 50% of the window |
-| `TALK` | Upright, E_legs < 0.1, E_arms < 0.2 for ≥ 2 s, and not STANDING_HOLD |
+| `DANCE` | E_legs above the take's 50th percentile of non-still windows |
+| `TALK` | Upright and still for ≥ 2 s, and not STANDING_HOLD |
 
-- **Inside a user-marked or authored step, TALK never removes frames.**
-- **Marking vs full-out:** reps are clustered (2-means) on ARAMANDI fraction, median hipDrop and lift amplitude. Only the deeper cluster builds templates.
-- **Student takes: presence and motion only.** Drop `NOT_VISIBLE`, `SUSPECT_ID`, walking, the anchor, and approach frames. Posture never removes student frames. "Stayed standing" during an aramandi step is a finding.
+Inside a marked step, TALK removes frames from **scoring** only for moving steps (F2 rules above), never for hold steps.
 
 ### F3. One step
 
-- **Teacher file:** step in/out marks in P2; the state-coloured timeline, proposals and "check the step" preview arrive in P3 (rules unchanged from round 3).
+- **Teacher file:** the marked step (Phase 1). The state-coloured timeline and step proposals come in Phase 3.
 - **Pattern cards and studio references:** the student picks a named step.
 
-### F3b. Steps inside the student take (P2)
+### F3b. The declared step has a strong prior (Phase 2, R43)
 
-The event layer (§4.1) runs over **the whole take** before any scoring.
+Round 3 found that labelling runs by the best-matching card turned the most common error into "other step". New rules:
 
-1. **Split into runs** where the pattern changes:
-   - the cyclic-alignment cost (§4.2) of each candidate reference step over sliding 2-phrase windows;
-   - IOI change points (§4.3).
-2. **Label** each run with the best-matching pattern card, when one fits.
-3. **Judge only the declared step.** Runs matching the declared step are judged. Others show as "other step: not judged".
-4. **Ambiguous or no match:** the runs are shown on the timeline and the app asks which run is the declared step. If nothing matches, it says so and skips pattern tips.
+1. **A take with one pattern is always judged against the declared step.** It is never relabelled.
+2. **Several patterns** are split only at a pause or an IOI change point (§4.3) **and** only when the take contains more than one stable pattern. Window costs are **normalised per aligned strike**, over **equal durations** (not equal phrase counts), so short cards don't win inside long ones.
+3. **Neighbouring cards in the same lesson are likely errors, not other steps.** If the whole take matches another card and not the declared one, ask after the take: "You danced **2 strikes on each side** (like Adavu 2). Adavu 3 in this reference has 3. Which were you practising?"
+   - **[Adavu 3]** → it is judged against Adavu 3: a count tip.
+   - **[Adavu 2]** → re-judged as Adavu 2.
+4. **"Different version"** only when the take matches **no** card in the lesson and the student has **not** confirmed the version. Even then it shows the detected strip and asks, and never silently skips.
 
-Test: Adavu 1–4 danced back to back, declared Adavu 3 → only the Adavu 3 run is scored, with no count tip.
+**Tests:**
+- Declared Adavu 3 danced R R · L L throughout → the count tip, or the prompt then the count tip.
+- Adavu 7 missing the switch → a pattern tip, not "Adavu 6".
+- Adavu 8 with a stamp on count 8 every phrase → the silence tip, not "Adavu 1".
+- Adavu 1–4 danced back to back, declared Adavu 3 → split at the pauses; Adavu 3 judged; the others listed as "also danced".
 
-### F4. Step kind and body-part modes
+### F4. Body-part modes and switches
 
-`kind` is authored or chosen (§2.1).
+- **Phase 1:** switches for Arms, Legs, Torso and Head, all on by default. A switch that is off removes that part from both alignment weights and tips.
+- **Phase 2 footwork modes:**
 
 | Mode | Rule |
 |---|---|
 | Arms `waist` | Wrists within 0.35 torso of the hips, low motion, in ≥ 70% of frames |
-| Arms `natyarambhe` | Wrists within ±0.25 torso of shoulder height and extension ≥ 0.7 arm length, in ≥ 60% |
+| Arms `natyarambhe` | Wrists within ±0.25 torso of shoulder height, extension ≥ 0.7 arm length, in ≥ 60% |
 | Arms `free` | Otherwise |
 | Legs `aramandi` | hipDrop ≥ 0.1 in ≥ 70% |
-| Legs `standing` / `mixed` | Otherwise |
-| `footwork` | kind = footwork |
 
-### F5. Tolerances from measured noise and teacher consistency
+### F5. Hold steps (R46)
 
-- `tol_f = dead_f + 1.5·MAD_f`, capped at 3·dead_f + 15°-equivalent.
-- `dead_f = max(prior_f, 2 × measured test-retest SD_f)`.
-- A feature is **free** (never scored) if the teacher's σ > 3 × dead_f.
-- With fewer than 2 teacher reps in a section, the dead band alone is used.
+A hold step is judged on the right moment:
+1. Find the frames whose state matches the step (ARAMANDI for an aramandi hold, posed arms for STANDING_HOLD; in Phase 1, the frames that best match the teacher's posture).
+2. Take the **longest such run**, then the **stillest 2 s inside it**.
 
-| Feature | Prior dead band (replaced by measurement in P0–P2) |
-|---|---|
-| Upper-arm frontal elevation, elbow height vs the shoulder line | 6° |
-| Wrist height | 0.06 torso |
-| Elbow angle (frontal) | 10° |
-| Lateral tilt, hip level, shoulder level | 4° |
-| Knee-over-toe angle | 12° |
-| Knee angle, depth-dependent terms | 15° |
-| hipDrop | 0.04 |
-| Knee spread | 0.2 hip widths |
-| Heel gap | 0.25 hip widths |
+"Stayed standing" is given only when the target state never lasts ≥ 1 s. The chosen window is shown ("judged 0:06–0:08") with "pick another moment".
 
-### F6. One-sided features
+### F6. Tolerances
+
+- **Phase 1:** fixed tolerances above MediaPipe's jitter (`05-mvp.md` §3.2). Tips are labelled **beta**.
+- **Phase 2:**
+  - `tol_f = dead_f + 1.5·MAD_f`, capped at `3·dead_f + 15°-equivalent`, with `dead_f = max(prior_f, 2 × measured test-retest SD_f)` **per stratum** (adult, child);
+  - a feature is **free** (never scored) if the teacher's own σ > 3 × dead_f.
+
+### F7. One-sided features
 
 | Kind | Features | Behaviour |
 |---|---|---|
-| **More is fine** | hipDrop (up to the reference + 0.12), knee spread, torso uprightness | Penalised only in the bad direction. **Never praised.** |
-| **Less is fine** | Heel gap, lateral tilt, hip-level error, foot-lift height | Penalised only in the bad direction |
-| **Two-sided** | Elbow angle, wrist height, limb directions at a phase | Penalised either way |
+| **More is fine** | Depth (up to the reference + 0.12), knee spread, torso uprightness | Penalised only in the bad direction. **Never praised.** |
+| **Less is fine** | Lateral tilt, **height bobbing**, knee roll-in | Penalised only in the bad direction |
+| **Two-sided** | Elbow angle, arm height, limb directions | Penalised either way |
 
 ---
 
-## 4. Alignment: events first, then posture
+## 4. Alignment
 
-### 4.0 Alignment features (Tier B/C)
+### 4.0 Principles
 
-- **De-meaned per unit, not per take.** Each teacher unit and each candidate student window is centred on its own mean, computed with prefix sums inside the DP. Footwork phrases are centred over the matched phrase. Scale is a fixed per-feature value (dead_f, or 0.1 for unit-vector components).
-- **Velocity after time normalisation.** It is computed on the resampled student grid (× the ratio), and per phase in Tier B. Unit test: a 2× student costs the same as a 1× student.
-- **Per-cell distance:** d = Σ w·|Δ|² / Σ w, with w = min(visibility, teacher and student).
-- **Masked frames** (`NOT_VISIBLE`, `SUSPECT_ID`, `GLITCH`, out of frame) get the **neutral cost**: the median of row minima of C over unmasked frames. Masked cells are **excluded from normalisation** (divide by the number of unmasked matched query frames). The same mask positions apply to the null.
-- **Confidence is relative.** Tier B's null is the cost against the template at non-matching phases (circular shifts of ¼, ½ and ¾ phrase). Tier C's null is the median of the matching function outside ±1 length of the chosen match. **Aligned** means cost ≤ 0.7 × null. **Step identity** means best ≤ 0.8 × second best.
+- **Confidence is always relative.** A match must be clearly better than the alternatives in the **same take** (Phase 1: the cost profile along the take; footwork: other phrase positions). This keeps beginners from being rejected and stops still standing from "matching".
+- **Masked frames** (no person, out of frame, occluded, SUSPECT_ID) get a **neutral cost**: the median of row minima over unmasked frames. They are excluded from normalisation and from every scoring denominator.
+- **Offsets (R53).** A constant posture offset (an arm held 15° low throughout) raises the cost everywhere, so the relative dip survives. The offset itself then becomes a tip. Per-window de-meaning **inside** the DP is not used: the window is an output of the path, so it can't be done in one pass. For the v2 chained sDTW, either:
+  - align on offset-invariant features (velocities, or features high-passed over about 1 s), or
+  - align, recompute the mean over the matched span, and re-run in a ±1 s band (2–3 iterations).
 
-### 4.1 Strikes
+### 4.1 Strikes (Phase 2)
 
-**Lift signal (R27).**
-- **Differential lift:** d(t) = y_L − y_R of the ankles in the gravity frame. Both ankles share the hip origin, so hip bounce, rising aramandi and standing frames cancel.
-- The same quantity is computed in upright screen pixels ÷ torso pixels. **Per take, the version with the higher SNR is used.**
-- **Baseline:** d0 = median of d over frames where both ankle speeds are low.
-- **Jitter:** σ_j = SD of d on those frames.
-- A lift of foot X is d − d0 above threshold in X's direction. The **planted foot** is the other one, or both when |d − d0| is below threshold. hipDrop uses this planted foot.
+**Lift signal.**
+- **Differential lift:** d(t) = y_L − y_R of the ankles, in the roll-corrected frame, from **raw lanes** (§2.6). Hip bounce, rising aramandi and standing cancel.
+- The same quantity in upright screen pixels ÷ torso pixels. Per take, the version with the higher SNR is used.
+- Baseline d0 and jitter σ_j come from **raw** frames where both ankle speeds are low.
 
-**Detection, iterative (no circularity).**
-1. **Candidates:** peaks of |d − d0| above 3σ_j, plus clean stamp onsets (§2.2).
-2. **Speed sections** from the combined onset train (§4.3).
-3. **Per-section threshold:** max(3σ_j, 0.4 × the section's median lift). Re-detect.
-4. **Audio can add.** A stamp inside a periodic stamp run, with any ankle vertical-velocity peak within ±1 sample, becomes a strike. The foot is the ankle with the larger vertical speed, otherwise `?`.
-5. **Audio can veto.** In a take where stamps confirm ≥ 70% of pose landings, a landing with no stamp is a **placement**, not a strike. Placements never count as strikes on silent slots.
+**Detection.**
+1. **Candidates:** peaks of |d − d0| above 3σ_j, plus confirmed stamp onsets.
+2. **Speed sections** (§4.3).
+3. **A first cyclic alignment** (§4.2) assigns candidates to slots.
+4. **Thresholds per foot and per slot class:**
+   - each foot gets its own SNR and threshold, because a beginner may stamp 8 cm right and 2 cm left;
+   - slots shorter than 1 pulse (Adavu 5's quick three, Adavu 8's quicker three) get their own median lift.
+   Then re-detect.
+5. **Audio can add** a strike: a stamp inside a periodic stamp run, with an ankle vertical-velocity peak within ±1 sample.
+6. **Audio can veto:** in a take where stamps confirm ≥ 70% of landings, a landing without a stamp is a placement, not a strike.
 
-- The rule of ≥ 2 lifted samples applies only at 1st and 2nd speed.
 - **Strike time:** the moving ankle's velocity minimum, refined to sub-sample time. A paired stamp time replaces it.
-- **Being in a dance run for 0.5 s only down-weights** a first strike that no stamp confirms. It never drops it.
-- **Both feet airborne** (the Namaskaram jump) is a `jump` event in screen space and is not part of strike strings.
+- **Both feet airborne** = a `jump` event, not part of strike strings.
 
-**Fair sampling.**
-- **fps gate:** count, silence and same/switch tips need a median IOI ≥ **5 samples** at the take's effective fps in that section, or stamp confirmation. Otherwise: "Too fast to count at this camera's frame rate: try 1st speed or a laptop."
-- When the reference is a bake, its strikes are re-detected on its lanes **subsampled to the student's effective rate**, so both sides have the same sensitivity.
+**Fair sampling (round 3: the gate used its own output).**
+- **The fps gate uses the expected IOI** = slotDur × τ. τ comes from the long slots, or from the neighbouring section × the ladder ratio.
+- It is applied **per slot class, to the shortest slot**, not to the section median.
+- Count, silence and same/switch claims need **≥ 5 samples per shortest slot** at the effective fps, or stamp confirmation. Otherwise: "Too fast to count at this camera's frame rate: try 1st speed or a laptop."
+- **No deletion edit is reported** at a reference position whose expected IOI is under 5 samples, or whose matched lifts in other phrases are near the threshold, unless stamps confirm that no onset happened.
 
-**Strike confidence per take.** Inputs: lift SNR (median lift / σ_j), the share of landings confirmed by stamps, and leg reliability. Pattern tips need either stamp agreement for that phrase, or SNR ≥ 4 with good leg reliability and the fps gate passed. Otherwise the app abstains: "I couldn't count your strikes clearly: wear something that shows your ankles or practise on a hard floor."
+**Strike confidence: per section and per foot.** Pattern tips need stamp agreement for that phrase, or **per-foot** SNR ≥ 4 with good leg reliability and the fps gate passed. Otherwise: "I couldn't count your strikes clearly: wear something that shows your ankles."
 
-### 4.2 Patterns
+### 4.2 Patterns (Phase 2)
 
-**Reference phrase P.** Slots `{foot R|L, strike|rest, duration in pulses}`, taken from:
-- a pattern card;
-- a studio reference;
-- in P3, the teacher's own strikes.
+**Reference phrase P.** Slots `{foot R|L, strike|rest, duration in pulses}`, from a pattern card (Phase 2), a studio reference, or the teacher's own detected phrase (Phase 3).
 
-**Teacher's own phrase (P3).**
-- Built from the **image-side** string {iL, iR, _}, which is always observed. It is the smallest exact repeat.
-- If that repeat needs an L/R swap, the phrase is 2p and the half-phrase parity is recorded.
-- Unit tests: Adavu 1 → 2, Adavu 3 → 6, Adavu 7 → 16 slots.
-- The base pulse is the largest common subdivision fitting the IOIs (candidates p, p/2, p/3, minimising quantisation error), not the median. This keeps Adavu 8's quicker strikes.
-
-**Cyclic alignment (R28).** A DP over (student strike i, reference position j mod |P|). Start and end are free, so no student period is needed.
+**Cyclic alignment.** A DP over (student strike i, reference position j mod |P|), with a free start and end.
 
 | Move | Cost |
 |---|---|
 | Match | 0 if the foot agrees under the mapping, otherwise 1 |
-| Insertion | 1 |
-| Deletion | 1 |
-| Timing term (added to each match) | 0.5 · \|log(IOI_i / (slotDur_j · τ))\| |
+| Insertion (extra strike) | 1 |
+| Deletion (missing strike) | 1 |
+| **Rest slot** | **Skippable at zero cost** |
+| **Masked position** (expected time inside a masked span or seam) | **Zero cost; excluded from all counts** |
+| Timing term (added to each match) | 0.5 · \|log(IOI_i / (Σ slotDur between the two matched positions, **including rests and deleted slots**, · τ))\| |
 
-- τ is the local tempo from a first, foot-only pass (a running median of IOI ÷ slot duration).
-- It is run under both image→foot mappings. Mapping-invariant errors are always reportable; side-specific ones only with known laterality (§4.8).
-- The timing term breaks ties, so the answer to "which of three strikes was missed" is consistent.
+- **A strike inside a rest slot's time window** is placed by timing as a **"strike on silent slot"** edit. It is no longer an extra strike somewhere.
+- **"Rest collapsed":** an IOI across a rest under 0.6× expected, in ≥ 50% of phrases (Adavu 6 "pause after each group"). It has its own tip and calibration case.
+- Rest-spanning IOIs are excluded from evenness.
+- The DP runs under both image→foot mappings. Mapping-invariant errors are always reportable; side-specific ones only with known laterality (§4.8).
 
-**Errors.** An edit is reported only when the **same edit recurs at the same reference position** in ≥ 50% of aligned phrases and ≥ 2 phrases:
-- missing or extra strike (count);
-- strike on a silent slot (needs stamp confirmation or a veto-capable take);
-- same/switch error.
+**Recurring edits.** An edit is reported only when the same edit recurs at the same reference position in ≥ 50% of **fully judged** phrases, and in ≥ 2 of them. **≥ 4 fully judged phrases** are needed before any pattern tip. A phrase touching a masked span or a seam, or the partial first or last phrase, is not fully judged.
 
-**Phrase correctness.**
-- The share of phrases that align exactly.
-- If it is under 50% while detection is confident and no single edit recurs, the tip is: "**Keep the count.** 2 of 6 phrases had the right strikes; say the sollukattu aloud." Importance 0.95.
-- A per-phrase ✓/✗ strip appears on the timeline.
+**Phrase correctness → "Keep the count" (R44).**
+- Based on the **per-strike edit rate**, not exact phrases.
+- It fires only when a one-sided binomial test says the student's edit rate is **≥ 3× the detector's edit rate** measured on good takes for that card and fps tier, with ≥ 4 fully judged phrases.
+- Only edits confirmed by stamps or high per-foot SNR count.
+- It is its own calibrated template. Until it passes, it isn't shown.
+- The per-phrase ✓/✗ strip is drawn only for phrases where every slot is confident; the rest are grey.
+- The tip says "**count silently in your head**", never "aloud": a voice in the room interferes with the stamp detector.
 
-**Version check (R33).**
-- Before the first take against a card or studio reference, the app shows the strip ("This version: R R R · L L L") with a looping demo (3D figure or studio video) and asks: "**Is this how you learn it?** Yes / My version differs".
-- A student take that is **self-consistent** (≥ 85% self-repeat) but differs from P in **every** phrase gets: "This looks like a different version of the step: pattern not judged." Side tips are skipped.
-- Wording is always relative: "this reference strikes three times on each side".
+**Version check (R43).**
+- Before the first take against a card, the strip ("This version: R R R · L L L") is shown with the 3D figure and the practice track: "**Is this how you learn it?** Yes / My version differs / Not sure".
+- **"Yes" is authoritative.** Consistent deviations are errors, worded relative to the reference: "This reference strikes four times on each side; you struck three every time." Every pattern tip carries a one-tap **"My version is different"**, which switches pattern tips off for that step.
+- **"My version differs":** pattern tips off; shape and posture tips stay.
+- **"Not sure":** see F3b(4).
 
-**Start foot.** Taken from the first aligned student strike and its reference position. A tip is given only when that strike maps to position 1 of the phrase or half-phrase with the opposite foot, **and** laterality is known.
+**Start foot (R45): only against a clock.**
+- **Recorder with a count-in:** position 1 is expected within about 1 pulse after the count-in. A wrong start foot means the first strike lands at the expected time but aligned to the **opposite half-phrase's** start. A late start (first strike at count 4) gives **no** tip.
+- **Uploads:** "Start foot not checked", unless the first strike is stamp-confirmed **and** preceded by ≥ 1 s of confirmed stillness with both ankles visible and no lift above 2σ_j. For alternating patterns (Adavu 1, 8) on uploads it is always "not checked".
+- On uploads, the tip is worded as a check: "Check: did you start with your right foot?"
+- **Tests:** L-start at the count-in → tip; late start at count 4 → no tip; Adavu 1 upload with a soft first R → no tip.
 
-**Templates.**
-- **12 samples per slot**, rests included, so detail per strike is constant across speeds and steps.
-- Odd half-phrases are **mirrored** (L/R indices swapped, x negated) before averaging when parity is recorded.
-- Key postures sit at the landings.
+**Templates (shape, Phase 3):** 12 samples per slot, rests included. Odd half-phrases are mirrored before averaging. Key postures sit at the landings.
 
-### 4.3 Speed sections and pairing
+### 4.3 Speed sections and ladders (R55)
 
 **Sections.**
-- Fit two models to log residual IOI (IOI ÷ slot duration):
-  - piecewise-constant (binary segmentation, ≥ 4 strikes per section);
-  - linear trend.
-  Choose by **BIC**.
-- A ramp is a drift finding (rushing or dragging), never a section.
-- Labels are relative to the take's slowest section, snapped to {1, 2, 4} with geometric bands. A ratio within 10% of a band edge is "uncertain".
+- **Piecewise-linear** fit (a level plus a slope per section) to log residual IOI.
+- A change point only for a **jump of ≥ √2 within 2 strikes**. Adjacent sections with a ratio under √2 are merged, and their slope is reported as **rushing or dragging**.
+- Labels are relative to the slowest section, snapped to {1, 2, 4}.
 
 **Pairing.**
-- **≥ 2 student sections:** the monotonic assignment to teacher sections that minimises Σ|log(student pulse / teacher pulse)| + pattern edit cost.
-  - If it differs from pairing by position, or the margin is weak, ask with a prefill: "You started at 2nd speed?"
-- **Single section:** ask, prefilled.
-- **"Not sure":** speed-invariant features only.
+- Uses only the **sequence of ratios between neighbouring sections**, matched against the card's ladder metadata. **Never the absolute student-to-teacher pulse** for uploads.
+- With a **clock** (practice track, teacher audio, or the YouTube clock in Phase 3), each section's pulse is compared with the reference pulse, and the tip names the section that is off: "1st speed was rushed: it ran ahead of the clicks."
+- **Uploads with no clock** get neutral wording: "Your 2nd speed was only about 1.4× your 1st; the two should differ by 2×."
 
-**Under-doubled.** When the card's ladder says ×2 and the student's ratio between neighbouring sections is < 1.6: "Make 2nd speed twice as fast."
+**Ladder tips are Phase 3.** Phase 2 judges each section on its own.
 
-**Slow motion (teacher files, P3).**
-- Detected from the video: > 30% duplicated consecutive source frames, or motion blur that doesn't match landmark speed. Audio mismatch is supporting evidence; strike rate is only a hint.
-- Flagged sections get a looping preview chip. A section is never excluded just for being slow.
+**Slow motion (teacher files, Phase 3):** > 30% duplicated consecutive source frames, or blur that doesn't match landmark speed. Flagged and previewed; never excluded just for being slow.
 
-### 4.4 Templates per speed section
+### 4.4 Templates per speed section (Phase 3)
 
-- **Footwork:** phrases are warped piecewise-linearly between strikes onto the per-slot grid, then averaged.
-- **Cyclic non-footwork (v2):** DBA.
-- A section needs ≥ 2 reps for a template; with fewer it gets Tier A only.
-- Non-cyclic units are 2–6 s, cut at **any stillness minimum ≥ 0.2 s**.
+- Footwork phrases are warped piecewise-linearly between strikes onto the per-slot grid, then averaged.
+- A section needs ≥ 2 reps for a template.
 
-### 4.5 Tier A: posture quality, no alignment
+### 4.5 Tier A: posture distributions (Phase 2, footwork)
 
-- **Eligible features:** a within-template 10–90 percentile range ≤ 2 × dead_f.
-- **Per paired section:** median, 10th/90th percentiles, spread, and a per-phrase trend.
-- **Hold steps** skip alignment. They compare the held-posture distribution over the student's **stillest ≥ 2 s window**.
-- Short takes and the "Posture: …" wording are as before.
+- **Per section:** median, 10th/90th percentiles, spread and a per-phrase trend, on frames inside strike runs (F2).
+- **Eligible features:** a within-reference 10–90 range ≤ 2 × dead_f.
+- **Hold steps:** F5.
 
-### 4.6 Tier B: event-anchored phase shape (P3)
+### 4.6 Tier B: event-anchored phase shape (Phase 3)
 
-- Student and teacher phrases are paired by the cyclic alignment. Time is warped piecewise-linearly between matched strikes.
-- **Confidence, all of:**
-  - ≥ 70% of strikes matched;
-  - **residual** IOI CV ≤ 0.3 per section;
-  - shape cost ≤ 0.7 × the phase-shift null.
-- Shape tips are suppressed at 4×.
+- Phrases are paired by the cyclic alignment and warped piecewise-linearly between matched strikes.
+- **Confidence:** ≥ 70% of strikes matched, residual IOI CV ≤ 0.3 per section, and shape cost ≤ 0.7 × the phase-shift null.
+- Suppressed at 4×.
 
-### 4.7 Tier C: chunked subsequence DTW (v2, non-footwork)
+### 4.7 The core path: whole-step subsequence DTW (Phase 1, R41)
 
-```
-D(n,m) = C(n,m) + min( D(n-1,m-1),
-                       D(n-1,m-2) + 0.5·C(n,m-1) + λ,   // skipped student frame charged
-                       D(n-2,m-1) + C(n-1,m)   + λ )    // skipped query cell charged
-λ = 0.1 · median row-min(C)
-```
+This is the general method for **any** marked step. It is specified fully in `05-mvp.md` §3.3; in summary:
 
-- **Scoring and persistence** use **every student frame in the matched span**, each mapped to the nearest path query index.
-- **Ratio candidates** {0.5, 1, 2} × event-rate ratio are compared on a coarse 5 fps pass. Only the winner is refined in a ±1 s band.
-- **Null:** the matching function itself, so it costs nothing extra.
-- **Budget:** 9 units × 2 min student is about 2 M cells, roughly 0.3 s on desktop and 1–1.5 s on a phone, in a loop that yields every 50k cells.
-- **Chains, coverage and cyclic repeats:** as in round 3.
-- **Unit tests:**
-  - every 2nd frame dropped;
-  - a missing hold costs more;
-  - a 0.5 s gross arm error is scored on ≥ 90% of its frames;
-  - a 1 s mask inside a 4 s unit still passes;
-  - a 40% partial take with deep sits later in the reference aligns.
+- **Features for alignment:** the 2D directions of 10 body segments (unit vectors), weighted by visibility and the body-part switches.
+- **Query** = the teacher's step, resampled to 15 fps. **Search space** = the whole student take, also at 15 fps.
+- **Recurrence:**
+  ```
+  D(n,m) = C(n,m) + min( D(n-1,m-1),
+                         D(n-1,m-2) + 0.5·C(n,m-1) + λ,   // skipped student frame charged
+                         D(n-2,m-1) + C(n-1,m)   + λ )    // skipped query cell charged
+  λ = 0.1 · median row-min(C)
+  ```
+  The student start and end are free, and **every student frame in the matched span is scored**.
+- **Found?** The best normalised cost must be **≤ 0.6 × the median** of the end-cost profile along the take, and the span must be 0.4–2.5× the teacher's length. The step must be ≥ 2 s.
+- **More tries:** block the span and search again, up to 6 times. Each try must pass the same test and cost ≤ 1.5× the best.
+- **Partial practice:** if nothing is found, the student's moving span is searched inside the teacher's step, and coverage is reported.
+- **Mirror:** both normal and mirrored are run, and the lower is kept. Within 10% → no side claim.
+- **Budget:** 900 × 2700 cells, well under 0.1 s on desktop. On a phone, the loop yields every 50k cells.
+- **Its known blind spot:** a wrong **number** of repetitions inside a cycle (an extra stamp) warps away as tempo. That is why Phase 2 exists, and Phase 1 says so (§13).
 
-### 4.8 Laterality: no side claim without facts
+**Chained Tier C (v2):** long non-cyclic sequences (the whole Namaskaram) are cut into 2–6 s units at stillness minima and matched as an ordered chain that may skip units, with R53 for offsets.
 
-**Student mapping.**
-- **Recorder:** unmirrored, **verified by the anchor**.
-- **Upload:** the anchor and the camera answer must agree.
+### 4.8 Laterality: no side words without facts
 
-**Reference → student mapping.**
-- **Pattern cards and studio references:** known.
-- **Teacher files:**
-  - the question "Which foot should YOU start with?" is preselected to **Not sure**;
-  - a side is accepted only when **two signals agree**: the answer, and the start foot of the student's own first take (if they disagree, ask once more showing both stills);
-  - side findings for teacher files are phrased as a check: "You started on the other side from the teacher as shown. Check which foot your teacher wants you to begin with."
-  - Mappings are stored **per facing section** (§2.5). A section whose facing is ambiguous, or whose converted string disagrees with the cue, gets no side tips.
+| Source | Laterality |
+|---|---|
+| **Recorder (Phase 2)** | Known: raw frames are unmirrored (virtual-camera labels → unknown) |
+| **Upload, back camera** | Unknown unless metadata settles it; the camera answer alone isn't enough |
+| **Upload, front camera** | **Mirroring unknown** (iOS "Mirror Front Camera", Samsung "Save as previewed", editing apps). Two agreeing independent signals are needed: QuickTime lens + a known device default, or the student's answer on a still of her first strike ("Which foot is this?") |
+| **Teacher file** | Two signals: "Which foot should YOU start with?" (default Not sure, asked only after a take), plus the student's own first take. Mapped per facing section (Phase 3). |
+| **Pattern card / studio reference** | Known |
 
-**Mirror view, symmetric steps, and mirrored-cost logic on non-symmetric steps:** as in round 3.
+- **Without known laterality:** no "left/right" in any tip. The joint is coloured red on the student's video instead (Phase 1 does this always).
+- **Side tips on teacher files** are worded as a check: "You started on the other side from the teacher as shown. Check which foot your teacher wants you to begin with."
 
 ### 4.9 Playback mapping and early/late
 
 | Case | Student t → reference t |
 |---|---|
-| Recorder take | Logged clock **per loop iteration**, minus the lag for that iteration |
-| Footwork | Piecewise-linear between strikes matched by the cyclic alignment |
-| Tier C | DTW path |
-| Low confidence | First dance frames lined up |
+| Phase 1 | The DTW path (synced playback, ghost) |
+| Recorder take | The logged clock per loop iteration |
+| Footwork | Piecewise-linear between matched strikes |
+| Low confidence | First moving frames lined up |
 
-**Lag** is estimated per iteration and section by cross-correlating the strike trains over ±1 phrase. Strikes are paired **through the cyclic alignment** (foot + phrase position), never by nearest time.
-
-**Early/late** is shown only for big-screen dance-along takes, excluding 1 s after each seam. Variation under 100 ms is ignored.
+**Early/late (Phase 3, round 3: latency confound).**
+- System latency is measured **separately**: a one-time "tap along to the flash and click" calibration, or a mic loopback of a click when the mic is on. Only that latency is subtracted.
+- **Constant** early/late is reported only with high latency confidence **and** |lag| < ¼ of the shortest unambiguous period (so never at 3rd speed). Otherwise only within-take drift is reported: "you drifted later in the second half".
 
 ---
 
 ## 5. Scoring
 
-### 5.1 Features (gravity frame, mid-hip origin, lengths ÷ take medians)
+### 5.1 Features
 
-| Group | Features |
+**Phase 1 (all roll- and scale-invariant):**
+
+| Feature | Measured as |
 |---|---|
-| Legs | **Planted hipDrop** (differential planted foot); foot-lift height; knee angle L/R; knee spread / hip width; heel gap; **knee-over-toe**: image-plane angle between the thigh/shin direction and the heel→foot_index direction (landmarks 29–32); **heel lift**: planted heel height vs foot_index; **flat landing** (beta): heel and toe velocity minima within 1 sample |
-| Torso | Lateral tilt; hip level vs the heel line; shoulder level; forward lean (side-on views only) |
-| Arms | Elbow angle; wrist height vs the shoulder line; lateral extension; upper-arm frontal direction |
-| Rhythm | §4.2, §5.3 |
+| Knee bend L/R | 3D angle hip–knee–ankle (world landmarks) |
+| Elbow bend L/R | 3D angle shoulder–elbow–wrist |
+| Arm height L/R | 2D angle of the upper arm **from the torso axis** (camera roll cancels) |
+| Knee spread, foot spread | Distance ÷ hip width |
+| **Knee alignment** (R47) | Knee lateral offset relative to the foot line (ankle → foot_index lateral position) ÷ hip width, on planted frames. Knee inside the foot line = rolling in. Measurable from the front. |
+| **Side tilt** | 2D torso axis **minus** the mid-hip → mid-ankle axis (camera roll cancels) |
+| **Height bobbing** | Mid-hip screen y relative to the planted (lower) ankle ÷ torso length, spread over the matched span |
+| Speed | Matched duration ÷ teacher duration |
 
-The view check is as before: depth features are off when the views differ by > 35% or yaw > 30°.
+**Phase 2 adds:** planted hipDrop, foot-lift height, the strike pattern, and **height steadiness phase-locked to strikes** (peak-to-trough of planted hipDrop per strike cycle). The cue is "stay at the same height".
+
+**Torso core = side tilt + forward lean.** From the front, forward lean can't be seen. The Torso chip then reads "**Partly checked: side tilt only** (forward lean needs a side view)". A front-view proxy (shoulder→hip screen length shrinking relative to the take's upright frames, with the nose moving toward hip height) is beta.
+
+**View check.** If the body's yaw (from the 3D shoulder line) differs from the teacher's by > 30°, the 2D features are off: "Film from the same angle as the teacher."
 
 ### 5.2 Penalties, safety gate, bands
 
-**Penalty.** `p = clamp((e_bad − tol_f) / (3·dead_f), 0, 1)`, measured in the penalised direction only. Glitch exclusion uses tracking evidence only (unchanged). A persistent, confidently tracked large error is real.
+**Penalty.** `p = clamp((e_bad − tol_f) / (3·dead_f), 0, 1)`, measured in the penalised direction only.
 
-**Safety gate on depth (R32).**
-- A depth tip ("lower") is allowed only when knee-over-toe **and** heel-down are judged and within tolerance.
-- **Knees roll in:** the leg tip becomes "**Open your knees over your toes before going lower**", and the depth tip is suppressed.
-- **Knees or heels not judgeable** (saree, low reliability): no "sit deeper" tip.
-- A depth tip never asks for more than **half the remaining gap** ("a little lower").
+**Safety gate on depth (R47).**
+- A "lower" tip is allowed only when **knee alignment** was judged and is within tolerance, and leg reliability is good.
+- **Knees roll in:** the tip becomes "**Push your knees out over your toes before going lower**", and the depth tip is suppressed.
+- **Knees not judgeable** (saree, low reliability): no depth tip.
+- A depth tip never asks for more than half the remaining gap ("a little lower").
+- **Heel-down is "Not checked"** until it is calibrated.
 
-**Group band.**
-- Computed from the **worst persistent feature penalty** (the maximum over features that meet persistence). The mean is kept only for internal ranking.
-- **Never better than "Getting there"** when a correction from that group is shown.
-- Shown only when the group's core features were judged:
-  - **Legs:** depth + knee-over-toe;
-  - **Arms:** per mode;
-  - **Torso:** lateral tilt.
-- Otherwise it reads "**Partly checked**: depth only", followed by what wasn't checked.
+**Beginner depth (round 3: elite reference).**
+- Once the student is past a minimum (hipDrop ≥ 0.08 with good knee alignment), the depth target is **her own best recent depth plus a small step**, not the reference's.
+- While she is improving, depth alone can't push the Legs band below "Getting there".
 
-| Band | Worst persistent penalty |
-|---|---|
-| Excellent | < 0.10 |
-| Good | < 0.25 |
-| Getting there | < 0.50 |
-| Needs work | otherwise |
+**Bands** per Arms / Legs / Torso / Timing: **Close match**, **Getting there**, or **Needs work**.
+- Set by the worst persistent feature.
+- Never better than "Getting there" when a correction from that group is shown.
+- "**Partly checked**: …" when core features weren't judged, with what wasn't checked.
+- The UI shows **no numbers**.
 
-Bands are provisional per template until the template passes §9. The UI shows no numbers.
+**"Not checked" list.** Every chip lists what wasn't judged and why ("knees hidden", "forward lean needs a side view", "flat-sole strikes not checked yet"). A missing tip is never read as a pass.
 
-**Not-checked notes.** Until the flat-landing and heel-lift templates pass calibration, the footwork chip shows "**Not checked: flat-sole strikes**" and quotes the cue. A missing tip is never read as a pass.
-
-### 5.3 Rhythm
+### 5.3 Rhythm (Phase 2–3)
 
 1. **Pattern first** (§4.2).
-2. **Evenness** uses **residual** IOIs (IOI ÷ slot duration · τ). All of these must hold:
+2. **Evenness** uses residual IOIs (IOI ÷ Σ slot durations · τ), excluding rest-spanning IOIs. All of these must hold:
    - 1st speed;
    - the reference's residual CV < 0.1;
-   - the student's CV − the reference's CV > 2 × floor, where `floor = √(2·(Δt²/12 + σ²)) / mean IOI` and Δt is 10 ms for stamp-refined strikes, otherwise the **effective** source interval;
-   - pose-only evenness is off below 20 fps effective;
-   - 2nd speed needs stamp refinement, and 3rd speed is stamp-only.
-3. **Rushing/dragging:** the BIC trend model (§4.3), or residual drift > 15% for ≥ 4 strikes against her own section. Never against the reference's tempo.
+   - the student's CV − the reference's CV > 2 × floor, where `floor = √(2·(Δt²/12 + σ²)) / mean IOI`;
+   - pose-only evenness is off below 20 fps; 2nd speed needs stamps.
+3. **Rushing/dragging:** the within-section slope (§4.3).
 4. **Early/late:** §4.9.
 
 ---
@@ -745,197 +734,187 @@ Bands are provisional per template until the template passes §9. The UI shows n
 
 ### 6.1 Candidates and ranking
 
-**Sources:**
-- Tier A differences beyond tolerance, trends and mode violations;
-- pattern errors, phrase correctness and start foot;
-- Tier B/C phase differences;
-- the "stayed standing" finding;
-- reference-free habits (§6.3).
+**Phase 1:** `severity = (|median difference| ÷ tolerance) × share of time`.
+- A tip needs:
+  - ≥ 40% of judged frames beyond tolerance in the same direction;
+  - visibility ≥ 0.6 on ≥ 70% of frames;
+  - presence in ≥ half the tries.
+- Top 3, one per body part, plus 1 strength (a clearly seen body part within half the tolerance). "More is fine" features are never praised.
 
-**Ranking:** `severity = importance × p × persistence × confidence`.
+**Phase 2+:** `severity = importance × p × persistence × confidence`.
 
 | Group | Importance |
 |---|---|
-| Legs / aramandi | 1.0 |
-| Pattern / count / phrase correctness | 0.95 |
-| Side / start foot | 0.9 (known laterality only) |
+| Legs / aramandi (incl. knee alignment, steadiness) | 1.0 |
+| Pattern / count / silent slot | 0.95 |
+| Start foot | 0.9 (clocked takes only) |
 | Torso | 0.8 |
 | Arms | 0.7 (0.9 in natyarambhe) |
 | Rhythm evenness | 0.5 |
-| Hands | 0.5 |
 
-- ×1.3 at key postures.
 - **Legs first:** if Legs is "Needs work", arm tips under 25° excess are suppressed.
-- Left and right versions of a tip merge ("both knees").
-- **Persistence:** cyclic steps ≥ 2 reps and ≥ 25% of frames; non-cyclic ≥ 25% of the unit and ≥ 1 s continuous; holds ≥ 25% of the hold.
+- Left and right versions merge ("both knees").
 
-**Strengths.**
-- Only from features whose tolerance is ≤ 2 × measured noise, in groups with no gated sub-features.
-- Worded exactly as measured.
-- Never "deeper than the demonstration".
+**Session focus.**
+- The focus stays until it improves by more than 2 × the retest spread, or passes tolerance.
+- **It is dropped** when the student taps "**This tip is wrong**" (that template is then suppressed for the session), or after **3 takes with no change**. Then the next confirmed issue can surface.
+- At most 3 corrections, 1 strength and 1 focus. When nothing qualifies, the reason is shown.
 
-**Session focus (hysteresis).**
-- The session's focus feature stays until its change exceeds 2 × the retest spread, or it passes tolerance.
-- A new tip must beat the focus by more than the retest noise.
-- After the first take, results open on the focus ("Depth: better / about the same"). Other corrections sit behind "**More tips**".
-- At most 3 corrections, 1 strength and 1 focus. When nothing qualifies, an explicit reason is shown.
+**Questions (R56).**
+- Asked **after** the take, and only when the answer would unlock a tip that was actually withheld ("Answer one question to get a start-foot check").
+- **At most 2 per take.** Answers are remembered per step.
+- Feedback lists "**Not checked because…**" with a one-tap answer next to each item.
 
 ### 6.2 Wording
 
-- The reference is called "**the reference**", "this demonstration", the teacher's name if given, or "the NrityaVaani version". **Never "your Guru".**
+- The reference is called "**the teacher**" (Phase 1), "this demonstration", or "the NrityaVaani version". **Never "your Guru".**
 - A standing line under the tips: "**If your teacher says otherwise, follow your teacher.**"
 - Each tip: an imperative, an external-focus image, the term with a gloss, and relative evidence. The cue is quoted when one exists. "It looks like…" marks medium confidence.
-- About 30 templates keyed `feature:direction`. English in P2; Hindi in v2.
+- **No left/right words without known laterality** (§4.8).
+- English in Phases 1–2; Hindi in v2.
 
-### 6.3 Reference-free habits (pattern-card-only students and YouTube mode)
+### 6.3 Reference-free habits (Phase 3: YouTube mode and pattern-card-only students)
 
 Labelled "**General posture habits: not compared with a teacher.**" They run on held aramandi frames only:
-- aramandi present (planted hipDrop ≥ 0.08) and **level across reps** (trend);
-- knees over toes; heels down;
-- torso steadiness (spread);
+- aramandi present and **level across reps**;
+- **knee alignment** (R47);
+- **height steadiness**;
+- torso side tilt;
 - hands on waist (Thattadavu mode);
 - L/R consistency between the two halves of a phrase.
 
-**Heels together is opt-in:** "Does your teacher keep the heels together?"
+**Removed:** "heels down" stays "Not checked" until calibrated, and "heels together" is opt-in only.
 
 ### 6.4 Example tips
 
-1. **Legs (gated):** "**Sit a little lower in aramandi, keeping your knees over your toes.** Through Adavu 2 your hips stay about half as low as in the reference. ▸ You 0:14 · Reference 0:58"
-2. **Safety:** "**Open your knees over your toes before going lower.** Your knees point forward while your feet turn out."
-3. **Pattern:** "**Three strikes on each side.** In 5 of 6 phrases you struck twice on each side; this reference strikes three times. *Cue: 'Right, right, right — then left, left, left.'*"
-4. **Count:** "**Keep the count.** 2 of 6 phrases had the right strikes; say the sollukattu aloud."
-5. **Silence:** "**Count eight is silent in this version.** Your feet stamped on eight in every phrase."
-6. **Ladder:** "**Make 2nd speed twice as fast.** You went about 1.4× faster."
+**Phase 1:**
+1. "**Bend your knees a little more.** Sit lower into aramandi, keeping your knees out over your toes; don't force it. ▸ Show me"
+2. "**Raise this arm** (shown in red) to the teacher's height."
+3. "**Stay at the same height.** Your hips bounce on each step; the teacher's stay level."
+4. "**You're about 30% slower than the teacher.** Practising slowly is fine; speed up when you're comfortable."
 
-- *Abstain:* "I couldn't count your strikes clearly: wear something that shows your ankles or practise on a hard floor."
+**Phase 2:**
+5. **Count (consistent error):** "**Three strikes on each side.** You struck twice on each side in every phrase; this reference strikes three times. *Cue: 'Right, right, right, then left, left, left.'* [My version is different]"
+6. **Silence:** "**Count eight is silent in this version.** Your feet stamped on eight in 5 of 6 phrases."
+7. **Knee alignment:** "**Push your knees out over your toes before going lower.**"
+8. **Keep the count** (once calibrated): "**Keep the count.** Several strikes landed off the pattern; count silently in your head."
+
+*Abstain:* "I couldn't count your strikes clearly: wear something that shows your ankles."
 
 ### 6.5 Gates (any one blocks a tip)
 
-- Coverage < 60%.
-- Within tolerance, a free feature, or the good side of a one-sided feature.
+- Not found, or coverage < 60% (Phase 1: the tip is limited to the covered part, and the coverage is said).
+- Within tolerance; a free feature; the good side of a one-sided feature.
 - Persistence not met.
-- View, clothing, tilt or **out-of-frame** gates.
-- Tier B/C confidence failed (blocks phase tips).
-- **Strike confidence or the fps gate** failed (blocks pattern tips).
-- **Version mismatch** (blocks pattern and side tips).
-- Laterality unknown (blocks side wording).
-- **Depth safety gate.**
-- 4× speed (blocks shape tips).
-- The template has not passed its calibration gate: the tip is hidden, or shown labelled beta.
+- View, clothing or out-of-frame gates.
+- Strike confidence or the fps gate (pattern tips).
+- **"My version is different"** chosen (pattern tips).
+- Laterality unknown (side wording).
+- The depth safety gate.
+- The template hasn't passed calibration: hidden, or shown as **beta**. Beta tips are never voiced.
 
-**"Show me", ghost and red joints:** gated as in round 3. The ghost is labelled "approximate".
+**"Show me"** pauses both videos at the worst moment, with the red joint on the student and green on the teacher.
+**The ghost** draws the teacher's skeleton on the student, scaled by torso length and anchored at the mid-hip, labelled "approximate". It is off for pattern cards.
 
-**"This tip is wrong"** is stored locally.
-
-**Take-to-take arrow:** only on the focus feature, when the change is > 2 × the retest spread.
-
-### 6.6 Voice
+### 6.6 Voice (Phase 3)
 
 - "Hear it" reads the focus tip via `GuruAudioEngine.syncLine` with a 6 s timeout, falling back to Web Speech.
-- **Beta tips are never voiced.** Hedges are kept in the spoken text.
+- Beta tips are never voiced.
 - Button note: "Tip text (not video) is sent to our voice service."
 
 ---
 
 ## 7. Student flow and UI (`/compare`)
 
-**Stepper:** **1 Reference → 2 Step → 3 Learn → 4 Your take → 5 Feedback.** State lives in `?project=…&step=…`. The page uses the house shell and is added to `NAV` and to the `SiteBackdrop` hide list.
+**Phase 1 stepper: 1 Teacher → 2 You → 3 Result.**
+1. **Teacher:** upload; mark the step (handles, live ETA); "Prepare". A progress bar shows the skeleton filling in, with "Keep this tab open". Optional "Save this teacher step".
+2. **You:** upload or phone camera; optional handles; progress.
+3. **Result:**
+   - two panes (stacked on mobile), with the student clock as master;
+   - the band chips with "Not checked" notes;
+   - up to 3 tips + 1 strength, each with Show me;
+   - the ghost switch and the body-part switches;
+   - "Try another take". Changing a switch re-scores instantly, with no re-processing.
 
-1. **Reference:** cards for Pattern cards / Studio references / Upload file / YouTube. For files: range → "Prepare", with an honest ETA, a resume banner, and Learn available at once.
-2. **Step:** a named step, or in/out marks; the version check; the teacher-file questions (start foot, clothing, facing).
-3. **Learn:** loop at 0.5/0.75/1×, mirror view, skeleton toggle, mode card.
-4. **Your take:** recorder (mode choice, framing check, hands-free) or upload; "Which speed?" when needed. The wait is shown before recording.
-5. **Feedback:**
-   - dual pane (stacked on mobile), with the student clock as master;
-   - the Guru pane shows the reference skeleton or video per the 0.9–1.1 rate rule;
-   - the error timeline has a per-phrase ✓/✗ strip, step-run lanes ("other step: not judged") and coverage;
-   - band chips, focus card, More tips, Record another take, Save.
+**Phase 2 adds** a Reference choice (pattern card / teacher file), Learn (3D figure + practice track at 0.5/0.75/1×), the recorder, and a Thattadavu "confirm the step" prompt for teacher files.
 
 **Error and empty states**
 
 | Situation | What the user sees |
 |---|---|
 | Model download failed | Retry |
-| GPU failed | CPU mode note |
-| HEVC | Settings / H.264 message |
-| No person | "Is your whole body in frame?" (only after the delegate test passed) |
-| Several moving people | Picker |
+| GPU failed | CPU mode note (slower) |
+| HEVC / codec | "Your phone saved this in a format this browser can't read: Settings → Camera → Formats → Most Compatible, or try Chrome" |
+| No person found | "Is your whole body in frame?" (only after the delegate test passed) |
+| Similar-size second person | Warning (Phase 1); picker (Phase 3) |
 | Small dancer | Pixel-size message |
 | Tab hidden | Paused |
-| Storage evicted | "Prepare again" |
-| Storage full | "Clear old analyses" |
-| Nothing matched | Tier A + "Did you dance this step?" |
-| Many cuts | Posture only |
-| **Camera denied** | Per-browser steps to re-enable |
-| **Camera busy** | "Close Zoom/Teams" |
-| **No camera** | "Upload a take" |
-| **Mic denied** | Continue without audio |
-| **In-app browser** | "Open in Chrome/Safari" + copy link |
-| **MediaRecorder unsupported / insecure context** | Upload |
-| **Too dark / low fps** | Light advice |
-| **Camera effects on** | Per-OS steps |
-| **Take lost on reload** | Plain message |
-| **Version differs** | Pattern not judged |
-| **Too fast for this frame rate** | Message |
+| Step not found | "We couldn't find the teacher's step in your video. Check it's the same step and your whole body is visible." Both skeletons stay viewable. |
+| Partial | "You practised about X% of the step. Tips cover that part." |
+| Different camera angle | "Film from the same angle as the teacher for arm and leg tips." |
+| Saved steps evicted | "Prepare again" |
+| **Phase 2:** camera denied / busy / missing, mic denied, in-app browser, too dark, camera effects on, **sound blocked ("Tap to start sound")**, take lost on reload, too fast for this frame rate, handheld | Per §2.2 |
 
 ---
 
-## 8. YouTube "Practise beside" (P3)
+## 8. YouTube "Practise beside" (Phase 3)
 
 ### Link parsing
 
-The link is parsed with `URL`:
 - **Hosts:** youtube.com, www., m., music., youtube-nocookie.com, youtu.be.
-- **Paths:** `/watch` (with `v=` anywhere in the query), `/shorts/ID`, `/embed/ID`, `/live/ID`, `/v/ID`.
-- `si=` is stripped.
-- `t=` / `start=` (`95`, `1m35s`, `1h2m3s`) prefills "Mark start".
+- **Paths:** `/watch` (`v=` anywhere in the query), `/shorts/ID`, `/embed/ID`, `/live/ID`, `/v/ID`.
+- `si=` is stripped. `t=` / `start=` prefills "Mark start".
 - Unit tests cover each form.
 
 ### Facade and lookup
 
-- **Facade:** a neutral placeholder. Nothing is fetched from `i.ytimg.com` before the click.
-- **Lookup:** `GET /api/yt/meta?id=`, hardened:
-  - id regex;
-  - Origin/Referer allow-list (Netlify domain, localhost);
-  - per-IP rate limit (30/min, 500/day);
-  - in-memory LRU cache for 24 h, plus the client cache for 7 days.
-- **Timing:**
-  - the warm-up ping is sent only **after a link is pasted**;
-  - if the lookup hasn't returned within 3 s, the player loads on click and the lookup is retried in the background and logged when done.
-- **Tracking:** no embed ever sets tracking (facade, nocookie, no autoplay), so Made-for-Kids compliance doesn't depend on the lookup's timing.
+- **Facade:** a neutral placeholder. Nothing is fetched from YouTube before the click.
+- **`GET /api/yt/meta?id=`:**
+  - id regex and an Origin/Referer allow-list;
+  - **the client IP is taken from the forwarded header** (uvicorn `--proxy-headers --forwarded-allow-ips='*'`, first `X-Forwarded-For` hop, or Netlify's `x-nf-client-connection-ip` on the rewrite path);
+  - only a **per-minute burst limit** in memory, because the free instance sleeps;
+  - daily bounds from the Data API quota and a 7-day client cache.
+- The made-for-kids check never depends on lookup timing: no embed sets tracking (facade, nocookie, no autoplay).
 
 ### Player
 
-`www.youtube-nocookie.com/embed/ID?enablejsapi=1&origin=…&controls=1&playsinline=1&rel=0`. No autoplay. ≥ 480×270 on desktop, never below 200×200.
+- `www.youtube-nocookie.com/embed/ID?enablejsapi=1&origin=…&controls=1&playsinline=1&rel=0`. No autoplay.
+- ≥ 480×270 on desktop, never below 200×200.
+- **Shorts or portrait videos** (from the path or oEmbed size) get a 9:16 player (e.g. 304×540), and the student pane matches it.
 
 ### Nothing over the player
 
-- The navbar is `absolute` on this page, `LiveChat` returns null, and the page never calls `toast()`.
-- **When any overlay opens while the player is mounted** (mobile nav menu, dialogs, selects), the player is paused and swapped for the facade until the overlay closes.
-- Playwright `elementsFromPoint` checks run in the idle, menu-open and dialog-open states.
-- No CSS mirror, scale or filter on the iframe.
+- On this page the navbar is `absolute`, `LiveChat` returns null, and the page never calls `toast()`.
+- When any overlay opens (mobile menu, dialogs, selects), the player is paused and swapped for the facade.
+- No CSS mirror, scale or filter on the iframe. **Mirror view isn't available for YouTube.**
+- Playwright `elementsFromPoint` checks cover the idle, menu-open, dialog-open **and recording** states.
+
+### Recording beside YouTube (round 3: the recorder modes broke the rules)
+
+- **Layout:**
+  - the player stays visible at its normal size with controls;
+  - the badge, countdown, status and recording indicator sit **in a strip outside its bounds**, in every mode including phones;
+  - **no YouTube fullscreen while recording**, and no sound-only mode.
+- **Start:** the student taps **YouTube's own play button**. Recording starts on the PLAYING state, and approach frames are trimmed. `onAutoplayBlocked` → a large "Tap play on the video" prompt.
+- **Stop:** wall-clock duration, tap, or walking out of frame, never player loops.
+- **Ads and buffering:** while the player is not PLAYING for > 2 s, the app says aloud "Ad or buffering, recording paused" and marks the frames unsynced.
+- **The take is video-only**, so YouTube's sound is never re-recorded.
+
+### Review beside YouTube
+
+- The YouTube player **plays independently**. It is re-synced only when the student plays or seeks her own pane, and only if drift > 1.5 s, and never more than once per 5 s.
+- Each tip has "**Jump YouTube here**", which seeks once and waits for `onStateChange`.
 
 ### What the student gets
 
-1. **Step marks:** "Mark start/end" from `getCurrentTime()`, saved in `nv_yt_marks`.
-2. **Loop and slow motion:**
-   - `seekTo(start, true)` at end − 0.15 s, then wait for `onStateChange` before trusting the time;
-   - rates only from `getAvailablePlaybackRates()`;
-   - an ad or a stall shows "**An ad or buffering interrupted the loop. Press play to continue**", with a hint to mark steps away from ad breaks.
-3. **Declare the step.** A Thattadavu adavu (pattern card + version check) or a step family.
-4. **Take flow:**
-   - **Record:** the recorder in YouTube mode. **The player is the clock:** `getCurrentTime()` and state are logged per frame, and frames are unsynced when the player isn't PLAYING or time stalls for 500 ms. The take is **video-only**, so YouTube's sound is never re-recorded.
-   - **Or upload** a take.
-   - **Then:** bake. Her take plays with its skeleton in a "You" pane **beside** the untouched player. The player follows coarsely, via `seekTo` at logged or marked times at phrase boundaries, and is never scored against.
-5. **Outputs:**
-   - her skeleton on her own video;
-   - pattern, count, phrase correctness and start foot against the pattern card (declared adavu, version confirmed);
-   - reference-free habits (§6.3);
-   - posture comparison only through a studio reference of the same step ("Compare with the NrityaVaani version"). **The app never invites uploading "this" video.**
+- Her skeleton on her own video.
+- The pattern card checks (declared adavu, version confirmed).
+- The reference-free habits (§6.3).
+- Posture comparison **only** through a studio reference or her teacher's own file. **The app never invites uploading "this" video.**
 
 | Family | Rules |
 |---|---|
-| Thattadavu family | Pattern card + habits; the heel rule is opt-in |
+| Thattadavu family | Pattern card + habits |
 | Natyarambhe arms | Wrist and elbow at the shoulder line + universal habits |
 | Natta / Mettu / Kuditta / Other | Universal habits only |
 
@@ -945,85 +924,105 @@ The link is parsed with `URL`:
   - 101/150/age-restricted: "This video can't be played here."
   - 100: "Video not found or private."
   - 153: a referrer problem. A comment in `next.config.ts` warns never to add `Referrer-Policy: no-referrer`.
-- **New `/terms`:** YouTube ToS binding (with link); rights to uploads; a parent or guardian for under-13s (or the local age of majority) when using YouTube and recording.
+- **New `/terms`:** YouTube ToS binding (with link); rights to uploads; a parent or guardian for under-13s.
 - **`/privacy`:**
   - YouTube API Services, with the YouTube ToS and Google Privacy Policy links;
   - "YouTube is contacted only after you press play";
-  - "We don't track you; YouTube videos you choose to play are third-party content";
+  - "YouTube videos you choose to play are third-party content";
   - edge-tts disclosed.
 
-**Explicitly not built:** server download, tab capture, a canvas over the iframe, a skeleton derived from YouTube, bakes keyed by `youtubeId`.
+**Explicitly not built:** server download, tab capture, a canvas over the iframe, a skeleton derived from YouTube.
 
 ---
 
 ## 9. Calibration and tests
 
-### Harness (P0)
+### Phase 1 tests (no recordings needed)
 
-- `scripts/bake-fixtures.mjs` drives Playwright with **`channel: 'chrome'`** (branded Chrome, so H.264/AAC decode). Alternatively, an ffmpeg pre-step transcodes fixtures to VP9/Opus WebM and the transcode is recorded in the header.
-- **Delegate check:** P0 bakes 3 clips on GPU and on CPU. If any feature differs by more than ¼ dead band, the calibration fixtures are baked on the GPU through the dev-only "Export bake" button.
-- **Tests:** `node --test --import tsx`. Raw lanes let every downstream change re-run in seconds.
+**Pure-TS unit tests**, run with `node --experimental-strip-types --test`, no new dependency. Synthetic stick-figure tracks:
+- a time-stretched copy (0.6× and 1.8×) → found, no tips;
+- padded with standing and walking → found;
+- 3 tries → 3 found;
+- mirrored → found, no side claim;
+- knee changed by 25° → knee tip;
+- arm held 15° low throughout (constant offset) in a **40% partial take** → found, partial, arm tip;
+- standing only → "not found";
+- half the step → about 50% coverage;
+- a 4 s still pause in the middle → pause excluded, no knee tip;
+- knees rolled in → knee-alignment tip, no depth tip;
+- 5° camera roll → no side-tilt tip;
+- masked 1 s gap → found, gap excluded from scoring.
 
-### Synthetic suite
+**End-to-end smoke test:** record the 3D dancer from `/learn` (Playwright `recordVideo`) as a teacher file, then compare it against a slowed, shifted and padded copy. Expect: found, few or no tips. Plus `tsc`, `eslint` and `next build`.
 
-All built from real bakes:
-- time warps; 1→2→4→2→1; a 0.35 s cycle; 2/8/16 s phrases;
-- **standing start + ±3 cm hip bounce + aramandi rising 0.05** → 100% of strikes kept;
-- **first strike dropped**, **start at count 4**, **mixed 2/3/4 counts** → no false count or start-foot tip; phrase-correctness tip only for the mixed case;
-- **correct Adavu 5–8 with 15% jitter** → Tier B passes, no rhythm tip;
-- **3rd-speed Adavu 1 with 2 cm lifts + audio** → ≥ 90% of strikes, a 3rd-speed section found;
-- **Adavu 1–4 concatenated, declared Adavu 3** → only that run scored;
-- period tests (2/6/16);
-- template lift amplitude preserved;
-- a 2× student = 1× cost;
-- the sDTW skip tests;
-- 1 s mask inside a 4 s unit;
-- a 40% partial take;
-- 7° camera roll; uneven sampling;
-- a **15 fps source** for a 24 fps target (no duplicate stamps);
-- tripod active area;
-- a mirrored back-camera take on a symmetric step.
+### Phase 2 calibration
 
-### Real calibration (budget = clips × templates)
+**Harness.**
+- `scripts/bake-fixtures.mjs` drives Playwright with `channel: 'chrome'`.
+- It **asserts `WEBGL_debug_renderer_info` is not SwiftShader or llvmpipe**, running headed with `--use-angle` on a team laptop.
+- Or it calibrates on the CPU delegate, if P0 measures the GPU/CPU difference under ¼ dead band.
+- **Detection `configHash` is frozen before calibration**, and re-bake hours are budgeted.
+- **Recording starts after the extraction freeze**, so test-retest is measured on the shipped pipeline.
 
-**v1 templates:**
-1. aramandi depth (with the safety gate)
-2. aramandi rises (trend)
-3. knee-over-toe
-4. count error
-5. silent-slot strike
-6. start foot
+**Synthetic suite (raw lanes, R42):**
+- 2-sample, 3 cm lifts at 24/15/10 fps → kept;
+- standing start, ±3 cm hip bounce, rising aramandi → 100% of strikes;
+- first strike dropped; start at count 4; mixed 2/3/4 counts;
+- correct Adavu 5–8 with 15% jitter;
+- **declared Adavu 3 danced R R · L L → count tip**;
+- **Adavu 7 missing the switch → pattern tip**;
+- **Adavu 8 stamp on 8 → silence tip**;
+- **correct Adavu 7 at 95% detector recall → no "Keep the count"**;
+- **correct Adavu 5 and 8 at 15 and 24 fps → no count tip**;
+- **an asymmetric-strength correct take → no count tip**;
+- **seam at every phrase; a 1.5 s walk-through in a 4-phrase take → no count tip**;
+- **teacher talk gap inside the marked step; student rest mid-take → excluded**;
+- **L-start at the count-in → tip; late start at count 4 → no tip**;
+- **a 30% rush in 1st speed then a correct doubling → rushing, no under-doubled**;
+- Adavu 6 with rests collapsed → "rest collapsed";
+- Adavu 1–4 concatenated → split at pauses.
 
-- **Instances:** each needs ≥ 20 error instances in split B plus about 20 in split A. That is **6 × 40 = 240 deliberate-error step-takes** of 20–30 s, plus **40 good takes**.
-- **Recording:** 4 people across 3 sessions in weeks 1–3, owned by person D, about 6 h of recording in total.
-- **Labelling:**
-  - pattern, count, silence and start foot are labelled **by listening**, blind, by any team member;
-  - posture is labelled by the reviewer, blind, including **magnitude** (subtle / clear).
-- **Split** by dancer and session.
+**Templates, Phase 2 v1:**
+1. count error (incl. the declared-step prompt);
+2. silent-slot strike;
+3. start foot (recorder);
+4. height steadiness;
+5. knee alignment + depth.
 
-### Gate per template, on split B
+"Keep the count" is added once its detector-rate baseline exists.
 
-- **Detection limit** = 2 × test-retest SD for that feature.
-- Recall ≥ 80% on errors **above the limit**.
-- Errors below the limit must produce **no wrong-direction tip**; they are listed as a blind spot.
-- Wilson 95% lower bound on precision ≥ 0.75 over ≥ 20 instances (that is, ≥ 19/20).
-- No high-confidence false tip on good takes, and ≤ 1 correction per good take.
-- Pattern templates are gated **per effective-fps tier** (24 / 15 / 10).
-- **Beta:** recall passes but there are too few instances.
+**Recordings.**
+- Each template needs ≥ 20 error instances in split B plus ~20 in split A, plus good takes. That is about **200 deliberate-error step-takes + 40 good takes**.
+- **Strata: adults AND children aged 6–10** (guardian consent, through the reviewer's dance-school network), including **naturally occurring beginner errors**, not only acted ones.
+- Split by dancer and session.
 
-### Required real cases
+**Labelling.** Pattern, count, silence and start foot are labelled by listening, blind. Posture is labelled by the reviewer, blind, with magnitude.
 
-- saree + carpet, correct pattern → no tip;
-- music playing; salangai; speaker bleed;
+**Gate per template and per stratum (split B).**
+- Recall ≥ 80% on errors above the detection limit (2 × test-retest SD).
+- No wrong-direction tip below the limit.
+- Wilson 95% lower bound on precision ≥ 0.75.
+- No high-confidence false tip on good takes.
+- Pattern templates are gated per fps tier (24 / 15 / 10).
+- **Until the child stratum passes, tips on child-sized takes are beta.**
+
+**Required real cases:**
+- saree + carpet;
+- music; salangai; voice (sollukattu aloud);
 - 15 fps webcam; CPU at 10 fps;
-- mirror wall; poster; parent on the sofa;
-- Namaskaram bow and a 180° turn → no `SUSPECT_ID`;
-- elbows 15–20° low → arm tip;
-- knees rolling in → safety tip, no depth tip;
-- a student deeper than the reference → no correction, no praise;
-- **naive testers answering the start-foot question unaided**;
+- **camera behind the dancer with a mirror in front**; side mirror wall; poster;
+- **class video with students behind the teacher**; **TV behind the student**; parent on the sofa;
+- **handheld parent clip**;
+- **captioned tutorial / PiP**;
+- **pallu or printed-top turn**;
+- **teacher crossing a wide stage with musicians**;
+- Namaskaram bow and 180° turn;
+- elbows 15–20° low;
+- knees rolling in;
+- a student deeper than the reference;
+- **child, mirrored front-camera upload**;
 - a front-then-back teacher;
-- a different-bani version → "different version";
+- a different-bani version;
 - portrait clipping of natyarambhe;
 - an auto-framing webcam;
 - test-retest.
@@ -1033,109 +1032,99 @@ All built from real bakes:
 ## 10. Reuse map and new modules
 
 **Reused**
-- `retarget.ts`: types, `P`/`H`, track functions via `lib/motion/track.ts`, `BODY` exported.
-- `segment.ts`, scaled for fps.
+- `retarget.ts`: types, `P`/`H`, the track functions (for the overlay only) via `lib/motion/track.ts`.
+- `segment.ts`, scaled for fps (Phase 3 structure pass).
 - `manifest.ts`: cues and steps feed the pattern cards.
-- `lib/voice/*`, `editorial.tsx`.
-- `classification.ts` + `mudras.ts` in v2. Distances will be normalised by palm size (wrist → middle MCP), crops taken from the **full-resolution source**, Katakamukha listed as unsupported until a rule exists, and a mudra tip given only when the expected mudra is supported and the reference's own frames classify ≥ 0.7.
+- `MocapFigure` + `samplePose`: the "animation, not compared" reference pane (Phase 2).
+- `lib/voice/*` (Phase 3).
+- `classification.ts` + `mudras.ts` (v2).
 
-**Restored from `287aba3`, with its known bugs fixed**
-- `bakeStore` → `lib/compare/store.ts` (NVB2, raw lanes, user scope).
-- The seek loop → the fallback reader.
-- `drawOverlay` → `SkeletonCanvas.tsx`.
-- Hand crops in v2.
+**Restored from `287aba3`, with known bugs fixed**
+- The seek loop → the Phase 1 fallback reader.
+- `drawOverlay` → `SkeletonCanvas`.
+- `bakeStore` → `lib/compare/store.ts` (NVB2, teacher steps only).
 
 **New: `frontend/src/lib/compare/`**
 
-| Module | Purpose |
-|---|---|
-| `extract/{reader,pool,preflight,people,identity,shots,clean,camera}.ts` | Reading, landmarker pool, preflight, extra-people classes, signature + re-acquire, cuts/view/facing, cleaning, gravity correction |
-| `record/{recorder,loop,remux,tempStore}.ts` | Recorder, gapless loop, Mediabunny remux, temp takes |
-| `audio.ts` | Clean-audio gates, stamp detector, offset |
-| `events.ts` | Differential lift, iterative strikes, sections (BIC), fps gate, strike confidence |
-| `patterns.ts`, `cards.ts` | Cyclic alignment, phrase correctness, version check, step runs; the pattern card table |
-| `features.ts`, `structure.ts`, `templates.ts` | Features, states, templates |
-| `align.ts` | Tier B (P3), Tier C (v2) |
-| `rules.ts`, `score.ts`, `tips.ts`, `tips.en.ts` | Habits, penalties, gates, bands, tips |
+| Module | Phase | Purpose |
+|---|---|---|
+| `extract.ts`, `queue.ts` | 1 | Reader (rVFC + seek fallback), landmarker, person following, the single-consumer queue |
+| `features.ts` | 1 | Segment vectors, angles, ratios, knee alignment, bobbing, mirror |
+| `align.ts` | 1 | Subsequence DTW, tries, partial, mirror (pure TS) |
+| `feedback.ts`, `tips.en.ts` | 1 | Gates, ranking, bands, wording (pure TS) |
+| `store.ts` | 1 | NVB2 teacher steps, delete |
+| `reader.ts` | 2 | Mediabunny deterministic reader |
+| `record/{recorder,unlock,loop,remux,tempStore}.ts` | 2 | Recorder, audio unlock, loops, remux, encrypted temp record |
+| `practiceTrack.ts`, `cards.ts` | 2 | Web Audio clicks, the card table, clip-span mapping |
+| `events.ts`, `patterns.ts`, `sections.ts` | 2 | Raw-lane strikes, cyclic DP with rests and masks, declared-step prior, version, sections |
+| `audio.ts` | 2–3 | Stamp detector + voice exclusion (2); full policy (3) |
+| `people.ts`, `identity.ts`, `shots.ts`, `graphics.ts` | 3 | Classes, signatures, cuts/motion, overlays |
 
 **Elsewhere**
-- `lib/youtube/{parse,player,loop,meta}.ts`
-- `components/compare/*`
-- `app/compare/page.tsx`, `app/terms/page.tsx`
-- `public/references/*`, `scripts/*`
-- **Backend:** only the hardened `GET /api/yt/meta`.
-- **Dependencies:** `mediabunny` (runtime, P1); `tsx` and `playwright` (dev).
-- **Rule:** read `node_modules/next/dist/docs/` before writing code.
+- `components/compare/*`; `app/compare/page.tsx`; Navbar link; `/privacy` lines (Phase 1).
+- `lib/youtube/*`; `app/terms/page.tsx`; backend `GET /api/yt/meta` (Phase 3).
+- **Dependencies:** none in Phase 1. `mediabunny` (runtime) in Phase 2. `playwright` (dev) for the harness.
+- **Rule:** read `node_modules/next/dist/docs/` before writing code (`frontend/AGENTS.md`).
 
 ---
 
 ## 11. Limits, performance, privacy
 
 **Caps**
-- Teacher source: unlimited. Processed range ≤ 3 min. Step 4–90 s.
-- Student take ≤ 2 min; the default auto-stop is about 15–45 s.
-- Frame rate: min(15 or 24, effective); 10 on CPU.
 
-**Estimated processing time** (re-measured in P0)
+| | Phase 1 | Phase 2 |
+|---|---|---|
+| Teacher step | 2–60 s | Same; 3 min in total over 2–3 ranges in Phase 3 |
+| Student take | ≤ 3 min | Recorder default ~30 s; ≤ 2 min |
+| Frame rate | ≥ 10 fps processed, resampled to 15 | min(24, source) for footwork; 10 on CPU with the fps gate |
+
+**Estimated processing time** (re-measured once built)
 
 | Job | Desktop | Mid-range phone |
 |---|---|---|
-| Teacher 3 min at 15 fps | ~1.5–3 min | ~6–9 min (shown up front; Learn works meanwhile) |
-| Student 30 s take | **live** (≈ 0 s after Stop) | ~1–2 min |
-| Pattern card / studio reference | 0 s | 0 s |
+| Teacher 30 s step | ~30 s (1×) | ~1–2 min (0.5×) |
+| Student 60 s take | ~1 min | ~2–4 min |
+| Pattern card | 0 s | 0 s |
 
-**P0 budget.** If a 30 s take takes > 2 min on the reference phone, phones use 15 fps for footwork with the fps gate.
-
-**Privacy.**
-- All vision runs on the device.
-- Temp takes last ≤ 24 h; kept takes expire after 7 days; delete-all is available; storage is user-scoped.
-- The backend sees only a YouTube id and tip text.
-- The studio dancer gives written consent.
+**Privacy:** all vision runs on the device. Student video is never kept. The backend only ever sees a YouTube id (Phase 3) and tip text for voice (Phase 3).
 
 ---
 
 ## 12. Plan and the decisions I need from you
 
-**Phases: P0 (1 week) + 6 weeks, 4 students**
+**Phases**
 
-| Phase | Work | Cut first if late |
-|---|---|---|
-| **P0** (5 days) | Mediabunny decode and remux on laptop, Android and iPhone; seek-loop fallback; `setOptions` reset + soak test; GPU/CPU self-test; HEVC; a 4 GB file; MediaRecorder formats; **iOS playback with the mic open** (speaker, wired, AirPods); mic DSP flags; `tsx` test; Playwright with Chrome channel + GPU/CPU delta; **reviewer confirmed; studio recording booked** | — |
-| **P1** (wk 1–2) | `/compare` shell; **privacy rewrite + delete-all + user scope**; reader; pool; teacher file (one range, detailed bake, skeleton, Learn); recorder (camera first, framing check, two modes, hands-free, phrase-snapped gapless loop, remux, temp store); upload a take; preflight; extra-people classes, picker, signature + re-acquire; cleaning + camera correction; side by side; NVB2. **D:** pattern cards + clip verification; calibration recording starts. **No scores.** | Split-screen handling |
-| **P2** (wk 3–4) | Event layer (differential lift, audio policy, iterative strikes, cyclic alignment, phrase correctness, version check, sections + pairing, fps gate, step runs); Tier A + safety gate + bands; laterality; en tips; per-template gates and beta; **live detection** in the recorder; studio references (if recorded); teacher-file step marks | Live detection (falls back to post-bake) |
-| **P3** (wk 5–6) | YouTube practise-beside (take flow, hardened meta, overlay rule, `/terms`, privacy additions); Tier B + ghost + error timeline; teacher-file structure pass, STANDING_HOLD, proposals, slow-motion flag; session focus; voice; StatsService `kind` | Voice, proposals, ghost |
-| **v2** | Tier C and the Namaskaram sequence steps; `.nvref`; several ranges; mixed-view templates beyond the 25° filter; mudras; Hindi; worker; rig references | — |
-
-**Team split**
-
-| Person | Owns |
-|---|---|
-| A | Extraction, pool, recorder, storage |
-| B | Events, patterns, scoring (pure TS + tests) |
-| C | UI, players, YouTube page |
-| D | Pattern cards, studio and calibration recordings (weeks 1–3), labelling, legal pages, tip text |
+| Phase | Work | Size | Cut first if late |
+|---|---|---|---|
+| **1** | `/compare` page; teacher upload + step marker; rVFC reader + seek fallback; landmarker + queue + person following; features; subsequence DTW (tries, partial, mirror, relative test); pauses; gates, bands, tips; Show me, ghost, synced playback; NVB2 save/delete; privacy lines; Navbar; unit tests + e2e smoke | 13 subsystems; **~1.5–2 weeks** for a student team | Ghost; saving teacher steps |
+| **2** | Mediabunny reader; recorder (tap start, unlock, loop units, remux, encrypted temp record, framing check); pattern cards + practice track + 3D pane; raw-lane events; cyclic DP with rests/masks; declared-step prior + prompt; authoritative version check; start foot (recorder); steadiness; knee alignment; minimal audio (stamps + voice exclusion); harness; calibration with adults + children | ~16 subsystems; ~4 weeks, with recording in weeks 2–3 | Start foot; the stamp detector |
+| **3** | YouTube practise-beside; studio references; teacher-file states, proposals, several ranges, `.nvref`; full audio policy; ladder tips; early/late with latency calibration; extra-people classes + identity + graphics; Tier B + ghost on footwork; voice; heavy tier | ~4–5 weeks | Voice; proposals; Tier B |
+| **v2** | Chained Tier C (Namaskaram sequences); mudras at body distance; Hindi; worker; rig references; live tips | — | — |
 
 **Decisions for you**
 
-1. **YouTube:** practise-beside + pattern cards + habits, with no tab capture. OK?
-2. **Studio references:** can the team get a consenting trained dancer? If not, pattern cards still ship. Posture comparison then needs a teacher file.
-3. **A reviewer** for posture labels. Without one, only the pattern, count, silence and start-foot templates can ship, since those are labelled by listening.
-4. **v1 = the Thattadavu path**; Namaskaram sequence steps and mudras move to v2.
-5. **Mediabunny** as a runtime dependency from P1; `tsx` and `playwright` as dev dependencies.
-6. **The recorder as the default,** with the microphone opt-in (off on iOS by default).
-7. **P0 week + 6 weeks**, with the cut list above.
-8. **Per-template gates with "beta" tips** allowed.
+1. **Build order:** Phase 1 (any teacher video file) first, then Thattadavu footwork, then YouTube. OK?
+2. **YouTube:** (A) practise-beside in Phase 3: compliant, no AI tips from the YouTube video itself (recommended); or (B) desktop-Chrome tab capture: works on desktop only and goes against YouTube's developer policy (not recommended).
+3. **Privacy:** student videos are never kept, and only teacher-step landmarks can be saved (opt-in). OK?
+4. **Phase 2 needs people:** a dance teacher as reviewer, and recordings that include children (with guardian consent). Without them, Phase 2 tips stay "beta".
+5. **Studio reference dancer** (Phase 3): optional. Pattern cards and teacher files work without one.
+6. **Model files:** keep loading them from Google and jsDelivr (as `/live` does today, disclosed in `/privacy`), or self-host them on Netlify (~21 MB, removes the third parties)?
+7. **Navbar:** add a "Compare" link?
 
 ---
 
 ## 13. Known weaknesses (accepted)
 
-- The literal "skeleton on the YouTube video" is not delivered. A YouTube-only student gets pattern-card checks and habits, and posture comparison only through a studio reference.
-- MediaPipe's knee and depth limits, plus costumes, mean leg feedback is often withheld. The depth tip is withheld whenever alignment can't be seen.
-- Pattern cards encode one version. Students of other banis get "different version" and no pattern tips.
-- Phone processing for teacher files takes minutes. Live detection removes the student wait only on fast devices.
-- Audio rhythm needs a clean recording, which many home takes won't have.
-- Side tips need facts, so many uploads get side-free tips only.
-- Full-body mudras, Namaskaram sequences and Hindi wait for v2.
-- If the recordings or the reviewer slip, fewer templates ship. P1 still ships as a working practice tool: skeleton, Learn and side by side.
-
+- **The literal "skeleton on the YouTube video" is not delivered.** A YouTube-only student gets pattern-card checks and habits (Phase 3).
+- **Phase 1 can't see a wrong number of strikes or taps:** DTW treats an extra stamp as slower dancing. Phase 2 fixes this for Thattadavu only.
+- **Phase 1 tolerances are first guesses** (beta) until Phase 2 calibration.
+- **One step range per teacher file until Phase 3,** so demonstrations spread across a class need two separate steps.
+- **Until `.nvref` (Phase 3), each student prepares the teacher step themselves,** and different trims can give slightly different tips.
+- **MediaPipe's knee and depth limits plus costumes** mean leg feedback is often withheld.
+- **Pattern cards encode one version.** Other banis get "My version is different" and no pattern tips.
+- **Phone processing takes minutes:** about as long as the video at 0.5–1×.
+- **Start foot is only checked on recorder takes.**
+- **Forward lean can't be seen from the front.**
+- **Side tips need facts,** so most uploads get side-free tips, pointed at with colour instead.
+- **Full-body mudras, Namaskaram sequences and Hindi wait for v2.**
+- **If the reviewer or recordings slip, fewer Phase 2 templates ship.** Phase 1 still works as a complete tool.

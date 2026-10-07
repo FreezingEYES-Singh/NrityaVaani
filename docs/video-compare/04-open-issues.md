@@ -1,6 +1,6 @@
 # Video compare feature: open issues and change history
 
-## Round 3 critic issues (NOT yet addressed in 03-design.md)
+## Round 3 critic issues (addressed in revision 3; see the resolution list below)
 
 ### alignment
 - **[critical] alignment-cleaning-erases-fast-lifts: The §2.6 cleaning chain erases short ankle lifts before strike detection and makes the SNR confidence gate meaningless**
@@ -298,6 +298,82 @@ Or decide in P0 to calibrate on the CPU (XNNPACK) delegate if the measured GPU/C
   - Scenario: A recorded class has Adavu 1 at 1st speed at 4:10–4:40. Then come 6 minutes of correcting students. 2nd and 3rd speed follow at 10:50–11:30.
   - Why it fails: One contiguous ≤ 3 min range can't cover both demonstrations. The student has to drop one speed, so the reference has no sections for the speeds she dances. Pairing then falls back to 'no same-speed section', ladder tips are lost, and 'Make 2nd speed twice as fast' can't fire. The issue list still records this as fixed, but §2.1(c) and §12 now say 'up to 3 ranges in v2'.
   - Suggested fix: Allow 2–3 ranges with a combined cap of 3 min in P1. The bake already handles shots and resets per range. Otherwise, update the issue's status to 'deferred' and list it in §13 so the user sees the regression.
+
+## Round 3: how each issue was resolved (revision 3)
+
+Status words: **fixed** (the design now does it), **moved** (the feature it applied to is now in a later phase, where it is fixed), **avoided** (Phase 1 no longer has the mechanism), **accepted** (listed in 03-design.md §13). Section numbers refer to `03-design.md` (revision 3) and `05-mvp.md`.
+
+### Critical
+- alignment-cleaning-erases-fast-lifts → **fixed**: events run on raw lanes (MediaPipe's own filter only; despike only jumps > 0.25 m); σ_j is measured on raw still frames; the mocap chain is for the overlay only; raw-lane injection tests at 24/15/10 fps. See §2.6, §4.1 and R42. Phase 1 uses no mocap filters for features.
+- alignment-systematic-error-labelled-other-step → **fixed**: the declared step has a strong prior; a single-pattern take is never relabelled; splitting happens only at pauses or change points in multi-pattern takes; costs are normalised per strike over equal durations; tests. See §3 F3b and R43.
+- feedback-consistent-count-error-swallowed → **fixed**: neighbouring cards are likely errors, so a whole-take match to another card asks "Which were you practising?"; "different version" applies only when no card matches and the version is unconfirmed. See §3 F3b and §4.2.
+- completeness-consistent-count-error-relabelled-as-other-step-or-version → **fixed**: the version "Yes" is authoritative; consistent deviation is an error with a "My version is different" button; tests for declared Adavu 3 as R R · L L, Adavu 7 missing the switch, and Adavu 8 stamping on 8. See §4.2 and §9.
+- legal-ux-user-scope-is-one-shared-demo-id → **fixed**: student video is never kept. Phase 1 holds it in memory only. Phase 2's crash-resume record is AES-encrypted with a key in sessionStorage and swept from the root layout on every page load. "Keep" is removed, and summaries go in a separate key. See §2.7 and R50.
+
+### High
+- alignment-fps-gate-and-systematic-misses → **fixed**: the gate uses the expected IOI per slot class (the shortest slot); confidence is per section and per foot; no deletion edits at short or near-threshold slots without stamps. See §4.1.
+- alignment-phrase-correctness-ignores-detection-error → **fixed**: per-strike edit rate vs the measured detector rate (≥ 3×, binomial test), ≥ 4 fully judged phrases, partial phrases excluded, its own calibrated template. See §4.2 and R44.
+- alignment-version-check-swallows-consistent-errors → **fixed**: the version answer is authoritative. See §4.2.
+- alignment-start-foot-absorbed-by-free-start → **fixed**: start foot is judged only against a clock (the recorder count-in); late-start and wrong-start tests; uploads say "not checked". See §4.2 and R45.
+- inputs-reflection-test-assumes-side-mirror → **fixed**: both mirror geometries are tested, plus opposite facing, and the dancer is never re-acquired to an opposite-facing body. Phase 1 keeps facing continuity. See §2.5 and R48.
+- inputs-overlap-test-flags-background-people → **fixed**: overlap counts only at similar depth; SUSPECT_ID needs 2 track cues. See §2.5.
+- inputs-handheld-follow-pan-read-as-cuts → **fixed**: continuous motion is not a cut; roll is estimated per 2 s window; σ_j is widened; a "handheld" preflight result. Phase 1 features are roll-invariant. See §2.5, §2.6 and R49.
+- inputs-anchor-wrong-hand-sets-laterality → **fixed**: the anchor is removed; front-camera uploads mean mirroring unknown and need two signals; there are no side words without facts (Phase 1 colours the joint instead). See §4.8 and R51.
+- inputs-masked-spans-and-seams-count-as-wrong-phrases → **fixed**: masked and seam positions cost zero and are excluded from counts; ≥ 4 fully judged phrases; loop units ≥ 8 s or a whole ladder. See §2.2 and §4.2.
+- feedback-depth-safety-gate-unmeasurable → **fixed**: knee alignment is redefined as the knee's lateral offset vs the foot line ÷ hip width (front-measurable); heel-down is "Not checked"; the gate is knee alignment + leg reliability. See §5.1, §5.2 and R47.
+- feedback-phrase-correctness-is-detector-noise → **fixed**: same as alignment-phrase-correctness. See §4.2.
+- feedback-systematic-miss-at-quick-slots → **fixed**: per-slot-class and per-foot thresholds; no short-slot deletion without stamps; "This tip is wrong" drops the focus and suppresses the template. See §4.1 and §6.1.
+- feedback-stay-same-height-unmodelled → **fixed**: height bobbing in Phase 1; phase-locked steadiness in Phase 2; it is part of the Legs core set. See §5.1.
+- engineering-p1-p2-scope-still-exceeds-team → **fixed**: re-cut. Phase 1 is the general core path (13 subsystems, no dependency, no recordings), and the event layer moves to Phase 2 with 5 templates. Subsystem counts per phase are in §12. Calibration runs after the extraction freeze. See R41.
+- engineering-pattern-card-recorder-has-no-media-or-clock → **fixed**: a generated practice track (Web Audio, clicks above 2 kHz and subtracted) is the clock; the recorder shows a 2D strip; the 3D figure appears only in Learn and Feedback. See §2.1(b), §2.2 and R54.
+- engineering-hands-free-start-loses-user-activation → **fixed**: tap to record; one AudioContext is unlocked inside the tap, and all sound plays through it; a "Tap to start sound" fallback. See §2.2 and R51.
+- engineering-live-detection-path-uncalibrated → **fixed**: live pose only drives the framing badge; tips always come from the bake of the recorded file; live tips are v2. See §2.2.
+- legal-ux-yt-recorder-modes-break-player-rules → **fixed**: a separate YouTube recording layout (strip outside the player, no fullscreen, no sound-only, start from YouTube's own play button, wall-clock stop, ad/buffering pause). See §8.
+- legal-ux-pattern-card-has-no-guide-or-clock → **fixed**: practice track + 3D clip span ("animation, not compared") + slot→clip mapping. See §2.1(b).
+- legal-ux-p1-full-range-bake-reverts-wait-fix → **fixed**: the step is the unit from Phase 1 (2–60 s, default 30 s around the playhead, live ETA). See §2.1(a).
+- completeness-tierA-undefined-for-non-footwork-teacher-files → **fixed**: the Phase 1 core path (whole-step subsequence DTW on posture) judges movement and timing for any step. See §4.7 and R41.
+- completeness-in-span-pauses-pollute-reference-and-take → **fixed**: in Phase 1, still pauses ≥ 1.5 s in moving steps are excluded from scoring; in Phase 2, frames outside strike runs are excluded. See §3 F2.
+- completeness-recorder-loop-and-autostop-break-ladder-steps → **fixed**: a loop unit per step (the whole ladder, or ≥ 8 s); duration auto-stop; the seam exclusion scales to min(1 s, ½ phrase) and is none for gapless practice tracks; ladder metadata for Adavu 2–8 only after reviewer confirmation, otherwise asked. See §2.1(b) and §2.2.
+- completeness-hands-free-start-blocked-by-autoplay → **fixed**: same as engineering-hands-free-start; YouTube starts from its own play button. See §2.2 and §8.
+
+### Medium
+- alignment-rest-slots-undefined-in-dp → **fixed**: rests are zero-cost skippable; the timing term is computed over summed slot durations; a strike in a rest window is a silent-slot edit; a "rest collapsed" edit. See §4.2.
+- alignment-ladder-ramp-staircase → **fixed**: piecewise-linear sections; a change point needs a jump of ≥ √2 within 2 strikes; pairing by neighbour ratios; never absolute pulse; ladder tips are Phase 3. See §4.3 and R55.
+- alignment-early-late-latency-confound → **fixed (moved to Phase 3)**: separate latency calibration; constant early/late only when confident and |lag| < ¼ period; otherwise drift only. See §4.9.
+- alignment-tierc-window-demeaning-not-dp-decomposable → **fixed**: no in-DP de-meaning; Phase 1 uses the relative dip test; v2 chains use offset-invariant features or iterate. Test: 40% partial + constant offset. See §4.0 and R53.
+- alignment-seam-exclusion-creates-recurring-deletions → **fixed**: seam strikes stay in the alignment as masked; loop units ≥ 8 s. See §2.2 and §4.2.
+- inputs-broadband-bleed-gate-kills-phone-audio → **fixed**: bleed is measured in the stamp band only; the practice track's clicks are above 2 kHz and subtracted; no headphone advice. See §2.2.
+- inputs-identity-signature-not-rotation-invariant → **fixed (Phase 3)**: signature per facing, chromaticity only, bone ratios only for limbs parallel to the image plane, two cues needed. See §2.5.
+- inputs-fixed-crop-loses-travelling-dancer → **fixed (Phase 3)**: the crop is the union of boxes from a 1 Hz pre-scan, split into crop segments when needed; numPoses 2 inside. See §2.5.
+- inputs-occluding-graphics-confident-wrong-ankles → **fixed (Phase 3)**: graphics/PiP detection; landmarks under graphics are occluded. Phase 1 accepts the risk. See §2.5 and §9.
+- inputs-youtube-hands-free-start-autoplay-blocked → **fixed**: start from YouTube's play button; an onAutoplayBlocked prompt; the badge sits outside the player. See §8.
+- inputs-calibration-cohort-excludes-children → **fixed**: a child stratum (6–10, guardian consent), gates per stratum, distance-by-height guide; child-size takes stay beta until it passes. See §2.2 and §9.
+- feedback-hold-step-stillest-window-picks-standing → **fixed**: the longest run in the target state, then the stillest 2 s; "stayed standing" only if the target never lasts ≥ 1 s; a "pick another moment" control. See §3 F5 and R46.
+- feedback-torso-band-hides-forward-lean → **fixed**: the Torso core is side tilt + forward lean; front view shows "Partly checked: side tilt only"; a beta proxy. See §5.1.
+- feedback-ladder-tip-blames-wrong-section → **fixed**: with a clock, name the section; neutral wording without one. See §4.3.
+- feedback-sollukattu-tip-breaks-audio → **fixed**: "count silently in your head"; voiced onsets are excluded; a voice-present flag. See §2.2 and §4.2.
+- feedback-start-foot-adavu1-missed-first-strike → **fixed**: uploads say "not checked" (always for alternating patterns) unless strictly confirmed. See §4.2.
+- feedback-calibration-population-mismatch → **fixed**: children and natural beginner errors in calibration; under-13 / child-size takes beta. See §9.
+- feedback-elite-reference-locks-beginner-focus → **fixed**: the depth target is the student's own best + a step; depth alone can't push Legs below "Getting there" while improving; the focus rotates after 3 unchanged takes. See §5.2 and §6.1.
+- engineering-single-video-instance-contention → **fixed**: a single-consumer queue with priorities, checkpoints and timestamp jumps; unit-tested. See §2.3.
+- engineering-setoptions-reset-rebuilds-full-graph → **fixed**: timestamp jumps for cuts and between videos; setOptions only for crop or mode changes, with its latency in the ETA. See §2.4 and R52.
+- engineering-yt-meta-rate-limit-sees-proxy-ip → **fixed**: forwarded-header client IP; a burst limit only; quota + client cache for daily bounds. See §8.
+- engineering-harness-headless-gpu-is-swiftshader → **fixed**: assert the renderer is not SwiftShader/llvmpipe, or calibrate on CPU if the delta is small; freeze configHash; budget re-bakes. See §9.
+- legal-ux-yt-feedback-follow-seeks-stutter → **fixed**: the player plays independently; re-sync only on student actions with drift > 1.5 s and at most once per 5 s; "Jump YouTube here". See §8.
+- legal-ux-stop-gesture-collides-with-choreography → **fixed**: gestures are removed; stop by duration, tap, or walking out of frame with a grace period. See §2.2.
+- legal-ux-question-overload-before-first-feedback → **fixed**: questions only after the take, only to unlock a withheld tip, ≤ 2 per take, remembered; a "Not checked because…" list. Phase 1 asks none. See §6.1 and R56.
+- legal-ux-studio-reference-consent-and-audio-rights → **fixed**: guardian consent and withdrawal; media outside git; original audio only. See §2.1(c).
+- completeness-youtube-dance-along-layout-undefined → **fixed**: the YouTube recording layout; mirror view stated as unavailable. See §8.
+- completeness-pattern-card-reference-pane-undefined → **fixed**: the 3D clip span through MocapFigure, slot→clip mapping, ghost off. See §2.1(b).
+- completeness-teacher-file-authoring-falls-to-students-again → **partly fixed, rest accepted**: students never choose `kind`; `.nvref` packs are in Phase 3; until then each student marks the step themselves (§13). See §2.1.
+- completeness-single-range-regression → **moved/accepted**: 2–3 ranges in Phase 3; listed in §13.
+
+### Low
+- inputs-shorts-player-tiny-dancer → **fixed**: a 9:16 player for Shorts or portrait videos. See §8.
+- feedback-adavu8-card-slot-durations → **fixed**: every card's slots are measured from the clip, with a unit test that half-phrases sum to the cue's counts, and reviewer sign-off. See §2.1(b).
+- engineering-studio-reference-media-in-repo → **fixed**: per-step clips hosted outside git. See §2.1(c).
+- legal-ux-privacy-rewrite-omits-cdn-and-wording-gaps → **fixed**: the model-download line and accurate retention wording; a self-hosting option (decision 6). See §2.7.
+- legal-ux-stats-kind-after-save → **fixed**: compare summaries use a separate `nv_compare_sessions` key. See §2.7.
 
 ## How rounds 1-2 issues were resolved
 
