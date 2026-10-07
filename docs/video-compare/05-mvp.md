@@ -139,6 +139,8 @@ No new npm dependencies and no backend changes.
 
 Each row is an attack on the previous version and the fix now in the design.
 
+> **How this was done:** one session reviewed its own design in a single pass. No separate critic or judge agents were run on this MVP, and the round-3 revision of `03-design.md` was never finished. The round-3 critical issues are handled by dropping the features they were about (A10, A15, A17), not by fixing the large design. The 24 high issues were not checked one by one against this MVP. Thresholds are first guesses, and nothing has been run or benchmarked yet.
+
 | # | Proposal | Attack | Fix |
 |---|---|---|---|
 | A1 | Compare the two videos frame by frame | Different lengths, start times and speeds | DTW stretches time |
