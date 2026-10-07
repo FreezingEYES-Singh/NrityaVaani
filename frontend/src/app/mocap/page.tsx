@@ -427,10 +427,12 @@ export default function MocapPage() {
   const [despike, setDespike] = useState(true);
   const [stabilise, setStabilise] = useState(true);
   const [rigid, setRigid] = useState(true);
-  const [src, setSrc] = useState("/mocap-sample.mp4");
+  // No default take: the sample clip is gitignored, so pointing at it 404s on
+  // every deploy. The page waits for Load video instead.
+  const [src, setSrc] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [restored, setRestored] = useState<string | null>(null);
-  const key = bakeKey(src, file);
+  const key = src ? bakeKey(src, file) : null;
 
   const onReady = useCallback((api: MocapApi) => {
     apiRef.current = api;
@@ -644,7 +646,7 @@ export default function MocapPage() {
    */
   const bake = useCallback(async () => {
     const v = videoRef.current;
-    if (!v || !ready || !v.duration) return;
+    if (!v || !ready || !v.duration || !key) return;
     abortRef.current = false;
     v.pause();
 
@@ -793,6 +795,7 @@ export default function MocapPage() {
    * work because a dropdown moved would not be.
    */
   useEffect(() => {
+    if (!key) return;
     let dropped = false;
     loadBake(key)
       .then((saved) => {
@@ -899,13 +902,15 @@ export default function MocapPage() {
             ? `Restored from disk — ${restored}`
           : baked
             ? `Baked with ${quality} — scrub or press play`
+          : !src
+            ? `Ready — ${quality} model, load a video`
           : `Ready — ${quality} model, bake the take`;
 
   const st = baked?.stats;
   const pct = (n: number) => (st?.frames ? `${Math.round((n / st.frames) * 100)}%` : "—");
 
   return (
-    <main className="min-h-screen bg-background px-6 py-10 text-foreground">
+    <div className="min-h-screen bg-background px-6 pt-28 pb-10 text-foreground">
       <div className="mx-auto max-w-[1500px]">
         <header className="mb-5">
           <h1 className="text-3xl font-semibold tracking-tight">Motion capture</h1>
@@ -918,14 +923,21 @@ export default function MocapPage() {
           <section className="relative overflow-hidden rounded-xl border border-foreground/10 bg-black">
             <video
               ref={videoRef}
-              src={src}
+              src={src ?? undefined}
               playsInline
               muted
               loop
-              controls
+              controls={!!src}
               className="block h-auto w-full"
             />
             <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+            {!src && (
+              <label className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-3 text-white/70 hover:text-white">
+                <span className="mono text-[11px] uppercase tracking-[0.16em]">No video loaded</span>
+                <span className="text-sm">Choose a video of a dancer to capture</span>
+                <input type="file" accept="video/*" onChange={onFile} className="hidden" />
+              </label>
+            )}
             <span className="mono absolute left-3 top-3 rounded bg-black/70 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white">
               Detected
             </span>
@@ -952,7 +964,7 @@ export default function MocapPage() {
               Stop bake
             </button>
           ) : (
-            <button onClick={bake} disabled={!ready} className={chip}>
+            <button onClick={bake} disabled={!ready || !src} className={chip}>
               {baked ? "Re-bake" : "Bake take"}
             </button>
           )}
@@ -1056,7 +1068,7 @@ export default function MocapPage() {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;
-                a.download = `${src.split("/").pop()?.replace(/\.[^.]+$/, "") || "take"}-${baked.fps}fps-${baked.quality}.nvbake`;
+                a.download = `${src?.split("/").pop()?.replace(/\.[^.]+$/, "") || "take"}-${baked.fps}fps-${baked.quality}.nvbake`;
                 a.click();
                 // Revoked on the next tick: revoking immediately can cancel the
                 // download in some browsers before it has read the blob.
@@ -1079,7 +1091,7 @@ export default function MocapPage() {
                 setReview(null);
 
                 const samples = baked.samples;
-                const name = src.split("/").pop()?.replace(/\.[^.]+$/, "") || "take";
+                const name = src?.split("/").pop()?.replace(/\.[^.]+$/, "") || "take";
                 const clip = emptyClip(samples.length, baked.fps, name, sex);
 
                 // Deliberately captured *unsteadied* — no timestamp, which is
@@ -1206,8 +1218,9 @@ export default function MocapPage() {
                   setRestored(
                     `${f.name} — ${saved.stats.frames} frames, ${saved.quality} model, ${saved.fps} fps`,
                   );
-                  // Kept, so the import survives the next reload too.
-                  await saveBake(key, { ...saved, savedAt: Date.now() });
+                  // Kept, so the import survives the next reload too — but only
+                  // against a loaded video, since that is what the store keys on.
+                  if (key) await saveBake(key, { ...saved, savedAt: Date.now() });
                 } catch (err) {
                   setError(`Could not read that bake: ${err instanceof Error ? err.message : err}`);
                 }
@@ -1217,7 +1230,7 @@ export default function MocapPage() {
           {baked && (
             <button
               onClick={() => {
-                deleteBake(key).catch(() => {});
+                if (key) deleteBake(key).catch(() => {});
                 setBaked(null);
                 bakedRef.current = null;
                 corrections.current.clear();
@@ -1493,7 +1506,7 @@ export default function MocapPage() {
           )}
         </section>
       </div>
-    </main>
+    </div>
   );
 }
 
