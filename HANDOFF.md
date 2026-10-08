@@ -4,6 +4,7 @@
 
 **Deployment (read this first):**
 - `FreezingEYES-Singh/NrityaVaani` is the owner's fork. Its `main` holds the Compare feature (merged 2026-10-08 at the owner's request), and the Netlify project at https://papaya-biscochitos-091922.netlify.app deploys from it.
+- **The owner's standing rule (2026-10-08): always put finished work straight into this fork's `main`** ("main is not the real place where the old code is"), so the papaya site updates for them to check. No need to ask before merging or pushing to the fork's `main`.
 - The owner's main website, https://nrityavaani-ai.netlify.app (the "Live Web App" link in README.md), is a different project and doesn't have `/compare`. **Don't touch it.**
 
 Read this file first. §0 is the latest state: **Phase 1 of the video-compare feature is built.** §1–4 are the earlier sessions' notes.
