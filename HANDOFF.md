@@ -4,11 +4,21 @@
 
 **Deployment (read this first):**
 - `FreezingEYES-Singh/NrityaVaani` is the owner's fork. Its `main` holds the Compare feature (merged 2026-10-08 at the owner's request), and the Netlify project at https://papaya-biscochitos-091922.netlify.app deploys from it.
-- The owner's main website, https://nrityavaaniai.netlify.app, is a different project. **Don't touch it.**
+- The owner's main website, https://nrityavaani-ai.netlify.app (the "Live Web App" link in README.md), is a different project and doesn't have `/compare`. **Don't touch it.**
 
 Read this file first. §0 is the latest state: **Phase 1 of the video-compare feature is built.** §1–4 are the earlier sessions' notes.
 
 ---
+
+## 0a. Session 4 (2026-10-08): `/compare` page redesign
+
+The owner said the page "ain't looking good", asked why a step can't be longer than 1 minute, and asked about YouTube links. This session (branch `claude/magical-darwin-9udatz`) changed **only the page's layout**: the analysis, extraction and storage code are untouched.
+
+- `CompareClient.tsx`: the three steps are numbered panels (current, done, locked) under a progress row; a facts strip (on this device, 2–60 s, model size); the YouTube and step-length answers sit beside the teacher drop zone; errors show inside the current step.
+- `DropZone.tsx` (new): click or drag-and-drop a video. The inputs keep `data-testid="teacher-file"` / `"student-file"`.
+- `TrimBar.tsx`: one timeline with two handles (`.dual-range` in `globals.css`); the whole video is shown up to 3 min, otherwise a 2-min window that follows the selection; dragging past 60 s pulls the other end along, and the note explains the limit.
+- `Results.tsx`: corrections on the left, body-part bands and switches on the right.
+- **The 60 s limit stays.** The match keeps several (teacher frames × student frames) arrays, about 25 bytes per cell, at 15 fps. 60 s × 180 s is ~2.4 M cells (~60 MB, twice that at the peak with the mirrored pass). Longer steps would need a smaller grid or a banded match first, and are not offered yet.
 
 ## 0. Session 3 (2026-10-08): Phase 1 of `/compare` is built
 
