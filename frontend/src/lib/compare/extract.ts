@@ -100,10 +100,20 @@ async function createModels(delegate: Delegate): Promise<Models> {
   return m;
 }
 
+/** `?delegate=cpu` forces the CPU (headless smoke tests, and devices with a broken GPU driver). */
+function forcedCpu(): boolean {
+  try {
+    return new URLSearchParams(location.search).get("delegate") === "cpu";
+  } catch {
+    return false;
+  }
+}
+
 async function getModels(onProgress?: (p: ExtractProgress) => void): Promise<Models> {
   report(onProgress, { stage: "loading-model", message: "Loading the pose model" });
   await preloadModels(onProgress);
   try {
+    if (forcedCpu()) return await createModels("CPU");
     return await createModels("GPU");
   } catch {
     try {
@@ -367,8 +377,9 @@ async function extractNow(video: VideoWithRvfc, range: [number, number], opts: E
     const played = await readByPlayback(video, start, end, detect, progress, () => models!.lost, recreate, aborted);
     if (aborted()) throw abortErr();
     if (played !== true) {
-      from = played;
-      opts.onNeedTap?.();
+      from = played.from;
+      // a stalled or refused playback may need a tap; a device too slow even at 0.25x doesn't
+      if (played.reason === "stalled") opts.onNeedTap?.();
       // seek loop from where playback stopped
       for (let t = from; t <= end + 1e-6; t += 1 / SEEK_FPS) {
         if (aborted()) throw abortErr();
@@ -377,7 +388,7 @@ async function extractNow(video: VideoWithRvfc, range: [number, number], opts: E
         const mt = await seekFrame(video, Math.min(t, end));
         if (mt === null) continue; // the frame never arrived: drop the sample
         detect(mt);
-        progress(mt, "Reading frame by frame");
+        progress(mt, played.reason === "slow" ? "Reading frame by frame so every frame gets processed" : "Reading frame by frame");
         await sleep(0);
       }
     }
@@ -385,6 +396,7 @@ async function extractNow(video: VideoWithRvfc, range: [number, number], opts: E
     document.removeEventListener("visibilitychange", onVis);
     void wake?.release().catch(() => undefined);
     video.pause();
+    video.playbackRate = 1;
     closeModels(models);
   }
 
@@ -405,9 +417,13 @@ async function extractNow(video: VideoWithRvfc, range: [number, number], opts: E
   };
 }
 
+type PlaybackEnd = true | { from: number; reason: "stalled" | "slow" };
+
 /**
  * Muted playback with requestVideoFrameCallback. Resolves true when the range
- * was read to the end, or with the media time to continue from in the seek loop.
+ * was read to the end, or with the media time to continue from in the seek loop:
+ * "stalled" when playback was refused or paused by the system, "slow" when even
+ * 0.25x left fewer than MIN_FPS processed frames per video-second.
  */
 async function readByPlayback(
   video: VideoWithRvfc,
@@ -418,8 +434,8 @@ async function readByPlayback(
   isLost: () => boolean,
   recreate: () => Promise<void>,
   aborted: () => boolean | undefined,
-): Promise<true | number> {
-  if (!video.requestVideoFrameCallback) return start;
+): Promise<PlaybackEnd> {
+  if (!video.requestVideoFrameCallback) return { from: start, reason: "stalled" };
   let rate = 1;
   video.playbackRate = rate;
   let last = start;
@@ -427,9 +443,9 @@ async function readByPlayback(
   let windowCount = 0;
   let pausedByUs = false;
   let message: string | null = null;
-  return new Promise<true | number>((resolve) => {
+  return new Promise<PlaybackEnd>((resolve) => {
     let finished = false;
-    const finish = (v: true | number) => {
+    const finish = (v: true | number, reason: "stalled" | "slow" = "stalled") => {
       if (finished) return;
       finished = true;
       video.removeEventListener("pause", onPause);
@@ -437,7 +453,7 @@ async function readByPlayback(
       document.removeEventListener("visibilitychange", onVis);
       pausedByUs = true;
       video.pause();
-      resolve(v);
+      resolve(v === true ? true : { from: v, reason });
     };
     const onEnded = () => finish(true);
     const onPause = () => {
@@ -473,6 +489,8 @@ async function readByPlayback(
             rate /= 2;
             video.playbackRate = rate;
             message = `Slowed to ${rate}× so every frame gets processed`;
+          } else if (fps < MIN_FPS) {
+            return finish(last, "slow"); // the seek loop samples every frame, however slow the device
           }
           windowStart = t;
           windowCount = 0;

@@ -404,6 +404,27 @@ Each step is checked before the next.
 
 Test changes: the partial case uses an arm 20° low (15° is exactly the tolerance). **Known limit:** "W 40% partial" reads as the full step with an arm tip: an arms-only step that starts and ends standing can't tell "stopped after 40%" from "never raised the second arm".
 
+**Steps 2–4 status (built, 2026-10-08):**
+- **Extraction:** `extract.ts`, which also holds the identity pass and the one-job queue, and `store.ts`.
+- **The page:** `src/app/compare/page.tsx` and `src/components/compare/*`; `analyze()` runs in a Web Worker.
+- **Checks:** headless Chromium only (CPU delegate); the phone checks below still need a person with the phones.
+- **End to end** (`e2e-assets/`, two runs in parallel on 4 cores):
+
+  | Teacher | Student | Result |
+  |---|---|---|
+  | namaskaram (movement step) | the same take, 3 s still + 1.3× slower + 2 s still | Found; "About 30% slower"; no tips; arms/legs/torso close; the teacher plays at ~0.7× in sync |
+  | namaskaram | mirrored | Found; no tips (namaskaram is near-symmetric, so it reads as a tie: the normal way, agreed tips only) |
+  | namaskaram | VP8 copy | Found; no tips; every band close |
+  | namaskaram | Thattadavu | "We couldn't find the teacher's step in your video." |
+  | Thattadavu (posture step) | the same take | Posture step; found; no tips; Timing not checked |
+
+- **Fixes these runs led to:**
+  - a smoothed speed map for synced playback;
+  - per-phase tips need severity ≥ 0.25 (real corrections in the suite score ≥ 0.55; extraction noise on real video scored 0.06–0.11);
+  - bands use the tolerance (the half-tolerance test is kept for the strength);
+  - extraction reads frame by frame when even 0.25× playback processes fewer than 10 frames per video-second.
+- **Not done:** the two-pass quick scan of long student videos (one pass, which §3.1 allows), and the rotation retry (a sideways body gets a warning).
+
 **2. Extraction:** `extract.ts`, `identity.ts`, `queue.ts`, `VideoPanel`. Skeleton on uploaded videos in headless Chromium (CPU delegate set explicitly; it is a smoke test, not a calibration). Then an iPhone and an Android 14+ phone: Low Power Mode, an HEVC `.mov`, a portrait video, the camera handoff.
 
 **3. The `/compare` page:** trim, progress, results, Show me, switches, sync play, save/delete, Navbar, LiveChat hide, privacy lines, back/forward-cache reset.

@@ -707,7 +707,9 @@ function makeBands(
     }
     const tip = tips.find((t) => t.part === p);
     const worst = Math.max(...outs.map((j) => j.worst[p]));
-    let level: Band["level"] = tip ? (worst >= 2 || tip.id === "knee-rollin" ? "needs" : "getting") : outs.every((j) => j.close.has(p)) ? "close" : "getting";
+    // no tip and every phase within the tolerance: close; a tip of up to 2x the tolerance: getting there
+    const within = outs.every((j) => j.maxRatio[p] <= 1);
+    let level: Band["level"] = tip ? (worst >= 2 || tip.id === "knee-rollin" ? "needs" : "getting") : within ? "close" : "getting";
     if (tip && level === "close") level = "getting";
     let note: string | undefined;
     if (p === "torso") note = MESSAGES.torsoPartly;
@@ -731,8 +733,10 @@ function makeBands(
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 /**
- * Smoothed student -> teacher time map: points every ~1 s along the path,
- * monotonic, local speed clamped to 0.5–2x.
+ * Smoothed student -> teacher time map for synced playback and the ghost: knots
+ * every 2 s at the median teacher time paired with the student frames near the
+ * knot, smoothed, monotonic, and with the local speed clamped to 0.5–2x
+ * (the alignment wobbles frame to frame; playback mustn't).
  */
 function timeMap(pairs: [number, number][], SG: GFrame[], TG: GFrame[]): TimeMapPoint[] {
   if (!pairs.length) return [];
@@ -742,10 +746,21 @@ function timeMap(pairs: [number, number][], SG: GFrame[], TG: GFrame[]): TimeMap
     byS.get(m)!.push(TG[n].t);
   }
   const ms = [...byS.keys()].sort((a, b) => a - b);
-  const pts: TimeMapPoint[] = [];
-  for (let i = 0; i < ms.length; i += GRID_FPS) pts.push({ s: SG[ms[i]].t, t: mean(byS.get(ms[i])!) });
-  const lastM = ms[ms.length - 1];
-  if (pts[pts.length - 1].s !== SG[lastM].t) pts.push({ s: SG[lastM].t, t: mean(byS.get(lastM)!) });
+  const KNOT = 2 * GRID_FPS;
+  const near = (i: number) => {
+    const vals: number[] = [];
+    for (let j = Math.max(0, i - 7); j <= Math.min(ms.length - 1, i + 7); j++) vals.push(...byS.get(ms[j])!);
+    return median(vals);
+  };
+  const idx: number[] = [];
+  for (let i = 0; i < ms.length; i += KNOT) idx.push(i);
+  if (idx[idx.length - 1] !== ms.length - 1) idx.push(ms.length - 1);
+  let pts: TimeMapPoint[] = idx.map((i) => ({ s: SG[ms[i]].t, t: near(i) }));
+  // the ends use the exact first and last pairs, so playback starts and stops on the step
+  pts[0] = { s: SG[ms[0]].t, t: mean(byS.get(ms[0])!) };
+  pts[pts.length - 1] = { s: SG[ms[ms.length - 1]].t, t: mean(byS.get(ms[ms.length - 1])!) };
+  if (pts.length > 2)
+    pts = pts.map((p, i) => (i === 0 || i === pts.length - 1 ? p : { s: p.s, t: (pts[i - 1].t + 2 * p.t + pts[i + 1].t) / 4 }));
   for (let i = 1; i < pts.length; i++) {
     const ds = pts[i].s - pts[i - 1].s;
     const dt = clamp(pts[i].t - pts[i - 1].t, 0.5 * ds, 2 * ds);

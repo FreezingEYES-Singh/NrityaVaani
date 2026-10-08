@@ -1,9 +1,44 @@
 # Handoff: session notes for the next Claude session
 
-**Branch:** `claude/relaxed-fermat-ctr4u2` (continues `claude/blissful-lovelace-305wig`, which it contains). `main` is untouched, and no PR is open yet.
-**Last updated:** 2026-10-07
+**Branch:** `claude/nifty-mendel-34y2is`. It contains `claude/relaxed-fermat-ctr4u2` (design revision 5) and `claude/blissful-lovelace-305wig`. `main` is untouched, and no PR is open yet.
+**Last updated:** 2026-10-08
 
-Read this file first. It covers what was done, how to confirm it, what is still open, and where the new "video compare" feature design stands.
+Read this file first. §0 is the latest state: **Phase 1 of the video-compare feature is built.** §1–4 are the earlier sessions' notes.
+
+---
+
+## 0. Session 3 (2026-10-08): Phase 1 of `/compare` is built
+
+The user approved the design ("continue revision 3 and the things needed after that and complete it"). The session before this one started building but hit its usage limit before pushing, so its work was lost. This session rebuilt Phase 1 in the build order of `docs/video-compare/05-mvp.md` §6, and committed and pushed after each step.
+
+### What's there
+
+| Step | Files | How it was checked |
+|---|---|---|
+| 1. Analysis core (pure TS) | `frontend/src/lib/compare/{features,align,feedback,tips.en,analyze,math}.ts`; suite in `testing/` | `npm run test:compare`: 111 tests pass. The synthetic suite passes 107/108 cases on 8 noise seeds; the 1 known limit and every rule changed from the spec are in 05-mvp.md §6. |
+| 2. Extraction (browser) | `extract.ts` (MediaPipe on device, playback reading, seek fallback, tap priming, identity pass, wake lock, queue), `store.ts` (IndexedDB, teacher steps only), `motionScan.ts` ("suggest the moving part") | Headless Chromium (CPU delegate), below |
+| 3. The page | `src/app/compare/page.tsx`, `src/components/compare/*` (CompareClient, VideoPanel, TrimBar, Results, DeleteSavedSteps), `runAnalysis.ts` + `analyze.worker.ts`; Navbar link; LiveChat and backdrop hidden on /compare; privacy page wording and "Delete saved steps" | tsc, eslint, `next build` |
+| 4. End to end | `docs/video-compare/e2e-assets/` (recorder, crop, test-video script, driver, README) | Results in 05-mvp.md §6 step 4 |
+
+### Run it
+
+```bash
+cd frontend && npm ci
+npm run test:compare                       # 111 pass
+node --experimental-strip-types src/lib/compare/testing/run.ts   # the suite as a table (SEED=n for other noise)
+npx tsc --noEmit -p . && npx eslint . && npm run build
+npx next start -p 3200                     # then open /compare
+```
+
+### Not done in Phase 1 (deliberately, or needs a person)
+
+- **Real phones:** an iPhone (Low Power Mode, an HEVC `.mov`, portrait) and an Android 14+ phone (the camera handoff). These need a person with the phones. Everything in this session ran in headless Chromium.
+- **Simplifications:**
+  - one pass over the student video, not the two-pass quick scan (05 §3.1 allows it);
+  - the identity pass only warns about a second person and masks frames when the tracked body suddenly shrinks while others are present;
+  - a sideways body gets a warning, not an automatic rotation retry.
+- **Calibration** (03 §9): all tolerances are first guesses, so every tip says "beta".
+- Phases 2 (Thattadavu footwork) and 3 (YouTube "practise beside") are not started. Each gets its own critic round first.
 
 ---
 

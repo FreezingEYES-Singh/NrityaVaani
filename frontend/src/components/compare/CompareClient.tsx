@@ -335,6 +335,12 @@ export default function CompareClient() {
     [],
   );
 
+  // ?debug=1 exposes the tracks and the result to tests (they never leave the tab)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("debug") === "1")
+      (window as unknown as { __compare: unknown }).__compare = { teacher: tTrack, student: sTrack, result };
+  }, [tTrack, sTrack, result]);
+
   const ghostInfo = useMemo(
     () => (ghost && tTrack && result?.found ? { track: tTrack, timeAt: (s: number) => mapTime(result.map, s), mirrored: result.mirrored } : null),
     [ghost, tTrack, result],

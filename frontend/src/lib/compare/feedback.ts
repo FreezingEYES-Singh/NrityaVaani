@@ -98,8 +98,10 @@ export interface JudgeOut {
   skipped: Record<Part, string[]>;
   /** Parts where every two-way feature was within half its tolerance in every phase. */
   close: Set<Part>;
-  /** Worst |median diff| / tol per part (for bands). */
+  /** Worst |median diff| / tol per part, over failing phases (for bands). */
   worst: Record<Part, number>;
+  /** Largest |median diff| / tol per part over every judged phase (in the bad direction for one-sided features). */
+  maxRatio: Record<Part, number>;
   rollJudged: boolean;
 }
 
@@ -116,6 +118,8 @@ export function setDebugBob(f: typeof debugBob) {
 }
 
 const VIS_MIN = 0.6;
+/** Severity (|median diff| / tol x the share of the step's time in failing phases) a per-phase tip needs. */
+const MIN_SEVERITY = 0.25;
 /**
  * Range of movement: a tip when yours is below this share of the teacher's. 05-mvp.md said
  * 0.7, but its own example (a 70%-height raise gets a tip) needs a little room: 0.75.
@@ -132,8 +136,9 @@ export function judge(inp: JudgeInput): JudgeOut {
   const skipped: Record<Part, string[]> = { arms: [], legs: [], torso: [] };
   const close = new Set<Part>(["arms", "legs", "torso"]);
   const worst: Record<Part, number> = { arms: 0, legs: 0, torso: 0 };
+  const maxRatio: Record<Part, number> = { arms: 0, legs: 0, torso: 0 };
   const nPh = inp.phaseShare.length;
-  const empty: JudgeOut = { tips: [], judged, skipped, close: new Set(), worst, rollJudged: false };
+  const empty: JudgeOut = { tips: [], judged, skipped, close: new Set(), worst, maxRatio, rollJudged: false };
   // less than 1 s of usable pairs: nothing is judged
   if (new Set(scored.map(([m]) => m)).size < 15) {
     for (const F of FEATS) if (inp.parts[F.part]) skipped[F.part].push(F.k);
@@ -189,6 +194,7 @@ export function judge(inp: JudgeInput): JudgeOut {
       const margin = F.tol + (2 * 1.2533 * sd) / Math.sqrt(Math.max(1, prs.length / 3));
       const bad = F.kind === "two" ? Math.abs(md) > margin : md > margin;
       if (Math.abs(md) > F.tol / 2) allHalf = false;
+      maxRatio[F.part] = Math.max(maxRatio[F.part], (F.kind === "two" ? Math.abs(md) : Math.max(0, md)) / F.tol);
       if (bad) {
         failShare += inp.phaseShare[p];
         const r = Math.abs(md) / F.tol;
@@ -205,7 +211,9 @@ export function judge(inp: JudgeInput): JudgeOut {
     worst[F.part] = Math.max(worst[F.part], worstRatio);
     if (F.kind === "two" && !allHalf) close.delete(F.part);
     if (F.kind !== "two" && worstRatio > 0) close.delete(F.part);
-    if (failShare > 0) tips.push(makeTip(F, worstMed, worstRatio * failShare, worstPair));
+    // a part slightly off for a moment isn't evidence: real corrections score >= 0.55 in the
+    // synthetic suite, extraction noise on real video 0.06-0.11
+    if (failShare > 0 && worstRatio * failShare >= MIN_SEVERITY) tips.push(makeTip(F, worstMed, worstRatio * failShare, worstPair));
 
     // range of movement (movement steps): only where the teacher's spread >= 2 x tol
     if (F.rom && inp.romS.length && inp.romT.length) {
@@ -345,7 +353,7 @@ export function judge(inp: JudgeInput): JudgeOut {
       close.delete("legs");
     }
   }
-  return { tips: out, judged, skipped, close, worst, rollJudged };
+  return { tips: out, judged, skipped, close, worst, maxRatio, rollJudged };
 }
 
 function sideOf(k: TipKey): 0 | 1 {
