@@ -40,10 +40,10 @@ export function getFingerExtensionScore(landmarks: Point[], fingerIndices: numbe
   return Math.min(1.0, distMcpTip / distSegments);
 }
 
-// `_handedness` is accepted so both call sites can pass what MediaPipe gave
+// `handedness` is accepted so both call sites can pass what MediaPipe gave
 // them, but the rules are all relative to the hand's own geometry and so
 // read the same on either hand.
-export function classifyMudra(landmarks: Point[], _handedness?: string) {
+export function classifyMudra(landmarks: Point[], handedness?: string) {
   const thumbIdx = [1, 2, 3, 4];
   const indexIdx = [5, 6, 7, 8];
   const middleIdx = [9, 10, 11, 12];
@@ -282,7 +282,7 @@ export function getSpecificMudraScore(landmarks: Point[], targetMudra: string, h
   return result;
 }
 
-function _getSpecificMudraScoreRaw(landmarks: Point[], targetMudra: string, _handedness?: string): MudraScore {
+function _getSpecificMudraScoreRaw(landmarks: Point[], targetMudra: string, handedness?: string): MudraScore {
   const thumbIdx = [1, 2, 3, 4];
   const indexIdx = [5, 6, 7, 8];
   const middleIdx = [9, 10, 11, 12];

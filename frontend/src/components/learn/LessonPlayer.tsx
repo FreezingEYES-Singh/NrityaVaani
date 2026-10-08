@@ -40,6 +40,8 @@ import {
   lineText,
   linesIn,
   loadManifest,
+  loadVoice,
+  readingFor,
   stepAt,
   type Language,
   type LessonManifest,

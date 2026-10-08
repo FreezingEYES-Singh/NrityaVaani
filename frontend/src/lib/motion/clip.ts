@@ -98,8 +98,9 @@ export function encodeClip(clip: Clip): Blob {
   const bodies: ArrayBufferView[] = [clip.times, clip.poses];
   const total = 8 + header.length + bodies.reduce((n, b) => n + b.byteLength, 0);
 
-  // One buffer filled by hand: a typed array's underlying buffer may be longer
-  // than the view, and handing the Blob the view writes the whole buffer.
+  // One buffer filled by hand, for the reason `bakeStore` gives: a typed
+  // array's underlying buffer may be longer than the view, and handing the Blob
+  // the view writes the whole buffer.
   const buffer = new ArrayBuffer(total);
   const out = new Uint8Array(buffer);
   out.set(new TextEncoder().encode(MAGIC), 0);

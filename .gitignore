@@ -74,5 +74,6 @@ next-env.d.ts
 .claude/
 
 # Local mocap footage (large, not source)
+frontend/public/mocap-sample.mp4
 studio/public/mocap-sample.mp4
 studio/public/thattadavu.mp4
