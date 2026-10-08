@@ -234,7 +234,7 @@ const VideoPanel = forwardRef<VideoPanelHandle, Props>(function VideoPanel(
   return (
     <figure className="m-0">
       <div
-        className="relative mx-auto overflow-hidden rounded-2xl border border-card-border bg-black"
+        className="relative mx-auto overflow-hidden rounded-sm border border-foreground/12 bg-black"
         style={{
           aspectRatio: aspect ? `${aspect}` : "16 / 9",
           width: aspect ? `min(100%, calc(62vh * ${aspect}))` : "100%",
@@ -252,7 +252,10 @@ const VideoPanel = forwardRef<VideoPanelHandle, Props>(function VideoPanel(
         />
         <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
       </div>
-      <figcaption className="mono mt-2 text-[10px] uppercase tracking-[0.18em] text-foreground/45">{label}</figcaption>
+      <figcaption className="mono mt-2.5 flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-foreground/50">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+        {label}
+      </figcaption>
     </figure>
   );
 });

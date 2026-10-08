@@ -226,3 +226,42 @@
 .blob-saffron { background: #FF9933; top: -10%; left: -10%; }
 .blob-violet { background: #8B5CF6; bottom: -10%; right: -10%; animation-delay: -5s; }
 .blob-gold { background: #FFD700; top: 30%; right: -10%; animation-delay: -10s; }
+
+/* /compare: two range inputs stacked on one timeline. Only the thumbs take the pointer,
+   so the track underneath can still be clicked to move the playhead. */
+.dual-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+  margin: 0;
+}
+.dual-range:focus { outline: none; }
+.dual-range::-webkit-slider-runnable-track { background: transparent; height: 100%; }
+.dual-range::-moz-range-track { background: transparent; height: 100%; }
+.dual-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 14px;
+  height: 100%;
+  border-radius: 3px;
+  border: 2px solid var(--background);
+  background: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary-glow);
+  cursor: ew-resize;
+}
+.dual-range::-moz-range-thumb {
+  pointer-events: auto;
+  box-sizing: border-box;
+  width: 14px;
+  height: 100%;
+  border-radius: 3px;
+  border: 2px solid var(--background);
+  background: var(--primary);
+  cursor: ew-resize;
+}
+.dual-range:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--foreground); outline-offset: 1px; }
+.dual-range:focus-visible::-moz-range-thumb { outline: 2px solid var(--foreground); outline-offset: 1px; }
+.dual-range:disabled::-webkit-slider-thumb { cursor: not-allowed; opacity: 0.5; }
+.dual-range:disabled::-moz-range-thumb { cursor: not-allowed; opacity: 0.5; }

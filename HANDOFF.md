@@ -4,11 +4,22 @@
 
 **Deployment (read this first):**
 - `FreezingEYES-Singh/NrityaVaani` is the owner's fork. Its `main` holds the Compare feature (merged 2026-10-08 at the owner's request), and the Netlify project at https://papaya-biscochitos-091922.netlify.app deploys from it.
-- The owner's main website, https://nrityavaaniai.netlify.app, is a different project. **Don't touch it.**
+- The owner's main website, https://nrityavaani-ai.netlify.app (the "Live Web App" link in README.md), is a different project and doesn't have `/compare`. **Don't touch it.**
 
 Read this file first. §0 is the latest state: **Phase 1 of the video-compare feature is built.** §1–4 are the earlier sessions' notes.
 
 ---
+
+## 0a. Session 4 (2026-10-08): `/compare` page redesign
+
+The owner said the page "ain't looking good", asked for steps longer than 1 minute ("it depends on him") and for YouTube links. This session (branch `claude/magical-darwin-9udatz`) redesigned the page, removed the length limit and added YouTube recording. The analysis and extraction code are untouched.
+
+- `CompareClient.tsx`: the three steps are numbered panels (current, done, locked) under a progress row; a facts strip (on this device, 2–60 s, model size); the YouTube and step-length answers sit beside the teacher drop zone; errors show inside the current step.
+- `DropZone.tsx` (new): click or drag-and-drop a video. The inputs keep `data-testid="teacher-file"` / `"student-file"`.
+- `TrimBar.tsx`: one timeline with two handles (`.dual-range` in `globals.css`); the whole video is shown up to 3 min, otherwise a 2-min window that follows the selection; "Whole video" selects everything; a handle pushed into the other one moves it along.
+- `Results.tsx`: corrections on the left, body-part bands and switches on the right.
+- **No length limit** (the owner's call: "it depends on him"). The teacher part can be the whole video and the student video is used whole. Measured in Node on synthetic takes: 60 s × 180 s in 0.6 s (~210 MB peak RSS), 5 min × 6 min in 1.9 s (~350 MB), 10 min × 15 min in 4.3 s (~650 MB). Past 60 s the trim note says it takes longer. A worker that dies on huge inputs isn't retried on the page (`runAnalysis.ts`, `HUGE`), and memory errors get a plain message.
+- **YouTube** (`YouTubeCapture.tsx`, `lib/compare/tabRecord.ts`, `lib/compare/youtube.ts`): paste a link; YouTube's own player plays it on the page; "Record from here" records only the player's box from this tab (getDisplayMedia with `preferCurrentTab` + Region Capture `cropTo`) with MediaRecorder; the WebM then goes through step 1 or 2 like a chosen file. Chrome and Edge on a computer only (`canRecordTab()`); other browsers get a note. `resolveDuration()` fixes MediaRecorder WebMs that report `duration = Infinity`. Checked in headless Chromium (`--auto-accept-this-tab-capture`) on a local video: the recording is the box's size, its duration resolves, and it prepares as a teacher step (85 frames found). youtube.com itself is blocked in the cloud container, so the real player was not tried here. Caveat: YouTube's terms don't allow recording its streams; this is the owner's decision.
 
 ## 0. Session 3 (2026-10-08): Phase 1 of `/compare` is built
 
