@@ -8,7 +8,6 @@ import { boneKey, findViolations, type Violation } from "./figureConstraints";
 import { disposeFigure, loadFigures, makeFigure, type Sex } from "./figureRig";
 import { decodePose, encodePose } from "@/lib/motion/poseCodec";
 import { JOINTS, JOINT_COUNT } from "@/lib/motion/skeleton";
-import { setSpreadAxis } from "@/lib/motion/critic";
 import { PoseSmoother } from "@/lib/motion/smooth";
 import { boneMap, retarget, type Frame, type Report } from "./retarget";
 import { createDanceStudioRoom } from "./DanceStudioRoom";
@@ -46,67 +45,6 @@ const IK = /IK/;
 // to grey out — the distinction the colouring exists to draw only means
 // something while a capture is running.
 const ALL_DRIVEN = new Set(JOINTS.map((j) => j.key));
-
-/**
- * Works out which knuckle axis spreads the fingers, by trying both.
- *
- * `figureConstraints` says outright that this rig's bone axes do not line up
- * with the sagittal and coronal planes, so "abduction is z" would be a guess —
- * and a wrong guess here does not fail, it quietly pushes fingers together when
- * asked to spread them. Measuring costs a few milliseconds once and removes the
- * guess: rotate the knuckles one way, see whether the fingertips moved apart,
- * then the other, and keep whichever did more.
- *
- * The rig is put back exactly as it was, so this can run before the first frame
- * is ever posed without leaving a mark on it.
- */
-function calibrateSpread(mesh: THREE.SkinnedMesh) {
-  const bones = boneMap(mesh);
-  const knuckles = ["Index1L", "Middle1L", "Ring1L", "Pinky1L"]
-    .map((k) => bones.get(k))
-    .filter((b): b is THREE.Bone => !!b);
-  const tips = ["Index3L", "Middle3L", "Ring3L", "Pinky3L"]
-    .map((k) => bones.get(k))
-    .filter((b): b is THREE.Bone => !!b);
-  if (knuckles.length < 2 || tips.length < 2) return;
-
-  const root = mesh.skeleton.bones[0];
-  const at = new THREE.Vector3();
-
-  /** Total distance between neighbouring fingertips — how open the hand is. */
-  const spread = () => {
-    root.updateMatrixWorld(true);
-    let sum = 0;
-    const points = tips.map((b) => new THREE.Vector3().setFromMatrixPosition(b.matrixWorld));
-    for (let i = 1; i < points.length; i++) sum += points[i].distanceTo(points[i - 1]);
-    return sum;
-  };
-
-  const saved = knuckles.map((b) => b.quaternion.clone());
-  const restore = () => knuckles.forEach((b, i) => b.quaternion.copy(saved[i]));
-
-  const before = spread();
-  const test = (axis: "y" | "z") => {
-    restore();
-    // Fanned rather than turned together: rotating every knuckle the same way
-    // swings the whole hand and moves the fingertips without separating them,
-    // which reads as no change on both axes.
-    knuckles.forEach((b, i) => {
-      at.set(0, 0, 0);
-      at[axis] = 1;
-      const turn = ((i - (knuckles.length - 1) / 2) * 10 * Math.PI) / 180;
-      b.quaternion.copy(saved[i]).multiply(new THREE.Quaternion().setFromAxisAngle(at, turn));
-    });
-    return Math.abs(spread() - before);
-  };
-
-  const byY = test("y");
-  const byZ = test("z");
-  restore();
-  root.updateMatrixWorld(true);
-
-  setSpreadAxis(byY > byZ ? "y" : "z");
-}
 
 type BoneOverlay = THREE.LineSegments & {
   userData: { update: (driven: Set<string>) => void; dispose: () => void };
@@ -783,9 +721,6 @@ export default function MocapFigure({
       mesh = made.mesh;
       chestBone = mesh.skeleton.bones.find((b) => /chest/i.test(b.name)) || null;
       if (chestBone) chestBaseRot = chestBone.rotation.clone();
-      // Once per figure, before anything is posed: which knuckle axis
-      // abducts is a fact about this export, not about anatomy.
-      calibrateSpread(mesh);
       rig.add(group);
 
       helper = makeBoneOverlay(mesh);

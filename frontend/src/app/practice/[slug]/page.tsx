@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, 
@@ -11,11 +11,9 @@ import {
   ChevronRight, 
   RotateCcw, 
   Volume2, 
-  VolumeX, 
-  Award, 
-  CheckCircle2, 
-  Sparkles, 
-  Box, 
+  VolumeX,
+  CheckCircle2,
+  Box,
   Image as ImageIcon 
 } from 'lucide-react';
 import Link from 'next/link';
@@ -58,7 +56,6 @@ const REQUIRED_HOLD_MS = 3000;
 
 export default function PracticeModePage() {
   const params = useParams();
-  const router = useRouter();
   const mudraSlug = params.slug as string;
   const mudra = MUDRAS.find(m => m.slug === mudraSlug);
 

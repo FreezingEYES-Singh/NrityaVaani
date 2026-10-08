@@ -21,6 +21,7 @@ import { ThemeToggle } from "@/components/shared/ThemeToggle";
 const LINKS = [
   { name: "Learn", href: "/learn" },
   { name: "Practice", href: "/practice" },
+  { name: "Compare", href: "/compare" },
   { name: "Live", href: "/live" },
   { name: "Library", href: "/library" },
   { name: "Research", href: "/research" },
