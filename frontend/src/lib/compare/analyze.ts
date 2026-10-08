@@ -6,6 +6,8 @@ import {
   GRID_FPS,
   type Band,
   type CompareResult,
+  type LessonResult,
+  type LessonStep,
   type Part,
   type PartSwitches,
   type Pause,
@@ -53,12 +55,14 @@ import {
   motionOf,
   phases,
   runsBridged,
+  MAX_TRIES,
   search,
   steadiest,
   stillMask,
 } from "./align.ts";
 import { FEATS, judge, type JudgeOut, type RawTip } from "./feedback.ts";
 import { MESSAGES, WORDS, timingText } from "./tips.en.ts";
+import { judgeHands } from "./hands.ts";
 import { clamp, mean, median, sgNoiseFactor, sgResidual } from "./math.ts";
 
 const FIT_HALF = Math.round(GRID_FPS / 2);
@@ -239,6 +243,24 @@ export function analyze(
   student: PoseTrack,
   parts: PartSwitches = ALL_PARTS_ON,
 ): CompareResult {
+  const r = analyzeBody(teacher, student, parts);
+  return parts.hands === false ? r : withHands(r, teacher, student);
+}
+
+/** Adds the hand judgement (hands.ts) to a body result: one hand tip after the body's tips, and the Hands band. */
+function withHands(r: CompareResult, teacher: PoseTrack, student: PoseTrack): CompareResult {
+  const h = judgeHands(teacher, student, r);
+  return {
+    ...r,
+    tips: h.tip ? [...r.tips, h.tip] : r.tips,
+    bands: { ...r.bands, hands: h.band },
+    notChecked: h.notChecked ? [...r.notChecked, h.notChecked] : r.notChecked,
+    // the extraction's own warning about small hands says the same thing
+    warnings: h.notChecked ? r.warnings.filter((w) => !w.startsWith("The hands were too small")) : r.warnings,
+  };
+}
+
+function analyzeBody(teacher: PoseTrack, student: PoseTrack, parts: PartSwitches): CompareResult {
   const warnings = [...new Set([...teacher.warnings, ...student.warnings])];
   const T = prepare(teacher, parts, false);
   const S = prepare(student, parts, false);
@@ -938,4 +960,355 @@ function postureOrHold(
     ],
     message: null,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Class mode: the student's dance, step by step, in a long class video */
+/* ------------------------------------------------------------------ */
+
+/** Windows of the student's dancing that are looked for in the class video: 4 s, every 2 s. */
+const WIN = 4 * GRID_FPS;
+const HOP = 2 * GRID_FPS;
+/** A run of matched windows longer than this many windows (about 12 s) is shown as several steps. */
+const STEP_WINDOWS = 6;
+const PAD = Math.round(GRID_FPS / 2);
+/** At most this many class stretches are checked for "not in your video". */
+const MAX_MISSED_CHECKS = 16;
+/** Legs this far from standing straight (directions and hip height) are a dance posture, not standing. */
+const LEGS_DANCE = 0.2;
+/** Hips rising and falling this much (hip height / torso length, 10th to 90th percentile) is dancing too. */
+const HIPS_DANCE = 0.15;
+
+/** The same take, cut to grid frames [a, b): per-take measurements (geometry, noise) are kept. */
+function slicePrepared(P: Prepared, a: number, b: number): Prepared {
+  const i = clamp(a, 0, P.G.length);
+  const j = clamp(b, i, P.G.length);
+  return {
+    ...P,
+    G: P.G.slice(i, j),
+    af: P.af.slice(i, j),
+    tf: P.tf.slice(i, j),
+    disp: P.disp.slice(i, j),
+    still: P.still.slice(i, j),
+    bob: P.bob.slice(i, j),
+  };
+}
+
+const gridIndex = (P: Prepared, t: number) => clamp(Math.round((t - P.G[0].t) * GRID_FPS), 0, P.G.length - 1);
+const present = (f: AFrame | null): f is AFrame => !!f;
+
+type Span = [number, number];
+
+/** Spans merged where they overlap or touch (within `gap` seconds). */
+function mergeSpans(spans: Span[], gap = 0.05): Span[] {
+  const s = [...spans].sort((a, b) => a[0] - b[0]);
+  const out: Span[] = [];
+  for (const x of s) {
+    const last = out[out.length - 1];
+    if (last && x[0] <= last[1] + gap) last[1] = Math.max(last[1], x[1]);
+    else out.push([x[0], x[1]]);
+  }
+  return out;
+}
+
+/** `spans` with everything in `cover` taken out. */
+function subtractSpans(spans: Span[], cover: Span[]): Span[] {
+  let out = spans.map((x) => [x[0], x[1]] as Span);
+  for (const [c0, c1] of cover) {
+    const next: Span[] = [];
+    for (const [a, b] of out) {
+      if (c1 <= a || c0 >= b) next.push([a, b]);
+      else {
+        if (c0 > a) next.push([a, c0]);
+        if (c1 < b) next.push([c1, b]);
+      }
+    }
+    out = next;
+  }
+  return out;
+}
+
+/** How far a pose's legs (directions and hip height) are from standing straight. */
+function legsOff(a: AFrame, n: AFrame): number {
+  let s = 0;
+  let W = 0;
+  for (const g of [4, 5, 6, 7]) {
+    const w = a.w[g];
+    if (w <= 0) continue;
+    s += w * Math.hypot(a.f[2 * g] - n.f[2 * g], a.f[2 * g + 1] - n.f[2 * g + 1]);
+    W += w;
+  }
+  const hw = a.w[A_DIRS];
+  if (hw > 0) {
+    s += hw * Math.abs(a.f[2 * A_DIRS] - n.f[2 * A_DIRS]);
+    W += hw;
+  }
+  return W > 0 ? s / W : 0;
+}
+
+/** Share of a take's frames in a time span that are idle: masked, still, or standing (as when talking). */
+function idleShare(P: Prepared, stand: AFrame, [t0, t1]: Span): number {
+  const tau = toleranceCost(ALL_PARTS_ON) + 2 * P.jit.cost;
+  let idle = 0;
+  let n = 0;
+  for (let i = gridIndex(P, t0); i <= gridIndex(P, t1); i++) {
+    const f = P.af[i];
+    n++;
+    if (!f || P.still[i] || cost(f, stand) <= tau) idle++;
+  }
+  return n ? idle / n : 1;
+}
+
+interface Cand {
+  t0: number;
+  t1: number;
+  cost: number;
+}
+
+/** Stretches (>= 1 s) where a take holds `pose`, either way round; the closer one where both overlap. */
+function postureStretches(pose: AFrame, takes: Prepared[], tauP: number): Cand[] {
+  const out: Cand[] = [];
+  for (const P of takes) {
+    const ok = inPosture(P.af, pose, tauP);
+    for (const [a, b] of runsBridged(ok, P.af.map((f) => !f), Math.round(GRID_FPS / 3))) {
+      if (b - a + 1 < GRID_FPS) continue;
+      out.push({ t0: P.G[a].t, t1: P.G[b].t, cost: mean(P.af.slice(a, b + 1).filter(present).map((f) => cost(f, pose))) });
+    }
+  }
+  out.sort((x, y) => x.cost - y.cost);
+  const kept: Cand[] = [];
+  for (const c of out) if (!kept.some((k) => c.t0 < k.t1 && c.t1 > k.t0)) kept.push(c);
+  return kept.slice(0, MAX_TRIES);
+}
+
+/**
+ * Class mode. The student's video holds several steps from a long class video
+ * (talking, repeats, slower demonstrations), in any order:
+ * 1. every 4 s window of the student's dancing is looked for in the class video.
+ *    A moving window is searched with the roles swapped (the window is the query,
+ *    so the class's talking is cut as pauses and every demonstration is a
+ *    candidate); a window holding a posture (footwork in place counts as a
+ *    posture, as for single steps) is matched to where the class holds that
+ *    posture. Standing still isn't dancing and isn't looked for.
+ * 2. one candidate per window is chosen so that neighbouring windows stay in the
+ *    same demonstration (a Viterbi pass: moving to another place costs extra);
+ * 3. runs of windows that stay together become steps, each judged like a single
+ *    step (tips, bands, timing, hands), with its own time map for playing side by side;
+ * 4. dancing in the student's video found nowhere is listed, and so is dancing in
+ *    the class (legs or body moving, or a dance posture; not gestures while
+ *    talking) that isn't in the student's video and isn't a repeat of something
+ *    they danced.
+ */
+export function analyzeLesson(teacher: PoseTrack, student: PoseTrack, parts: PartSwitches = ALL_PARTS_ON): LessonResult {
+  const warnings = [...new Set([...teacher.warnings, ...student.warnings])];
+  const empty = (message: string): LessonResult => ({ steps: [], unmatched: [], missed: [], message, warnings });
+  const X = prepare(teacher, parts, false);
+  const S = prepare(student, parts, false);
+  if (count(X.af) < GRID_FPS) return empty(MESSAGES.teacherEmpty);
+  if (count(S.af) < GRID_FPS) return empty(MESSAGES.tooShort);
+  const XM = prepare(teacher, parts, true);
+  const SM = prepare(student, parts, true);
+  const tol = toleranceCost(parts);
+  const standS = neutralFrame(S.geom);
+  const standX = neutralFrame(X.geom);
+
+  /**
+   * Where window W of one take is in the other take (P, and PM mirrored); [] when it
+   * isn't there; null when W is standing still (not dancing).
+   * - A movement is searched as movement (roles swapped, so the other take's pauses
+   *   are cut), and only so: an aramandi held somewhere else isn't the same step.
+   * - Footwork in place or a squat (the "posture" kind: moving, but little) is searched
+   *   as movement first, then matched to where the other take holds that posture.
+   * - A hold is matched by its posture, unless it is plain standing.
+   */
+  const locate = (W: Prepared, P: Prepared, PM: Prepared, stand: AFrame): Cand[] | null => {
+    const pose = medianFrame(W.af.filter(present));
+    if (!pose) return null;
+    const standing = cost(pose, stand) <= tol + 2 * W.jit.cost;
+    const kind = kindOf(W).kind;
+    if (kind === "hold" && standing) return null;
+    if (kind !== "hold") {
+      const r = movement(W, P, PM, parts, tol, []);
+      const use = r.found ? (r.reading === "full" ? r.tries : r.coverage >= 0.6 ? r.tries.slice(0, 1) : []) : [];
+      if (use.length || kind === "movement") return use.map((t) => ({ t0: t.start, t1: t.end, cost: t.cost }));
+    }
+    return standing ? [] : postureStretches(pose, [P, PM], tol + 2 * P.jit.cost);
+  };
+
+  // 1. the student's dancing, window by window, in the class video
+  interface Win {
+    a: number;
+    s0: number;
+    s1: number;
+    cands: Cand[];
+  }
+  const wins: Win[] = [];
+  for (let a = 0; a + 2 * GRID_FPS <= S.G.length; a += HOP) {
+    const b = Math.min(S.G.length, a + WIN);
+    const W = slicePrepared(S, a, b);
+    if (count(W.af) < 0.6 * (b - a)) continue;
+    const cands = locate(W, X, XM, standS);
+    if (cands) wins.push({ a, s0: S.G[a].t, s1: S.G[b - 1].t, cands });
+  }
+  if (!wins.length) return empty(MESSAGES.lessonNoDance);
+  const costs = wins.flatMap((w) => w.cands.map((c) => c.cost)).filter(Number.isFinite);
+  const typical = costs.length ? median(costs) : 0.1;
+  for (const w of wins) for (const c of w.cands) if (!Number.isFinite(c.cost)) c.cost = 1.3 * typical; // a partial match
+  debug.log?.("lesson-windows", wins.map((w) => ({ s: +w.s0.toFixed(1), c: w.cands.map((c) => [+c.t0.toFixed(1), +c.t1.toFixed(1), +c.cost.toFixed(3)]) })));
+
+  // 2. one candidate per window, staying in the same demonstration where it can
+  const NONE = 2 * typical + 0.05;
+  const JUMP = 0.6 * typical + 0.02;
+  const adjacent = (k: number) => k > 0 && k < wins.length && wins[k].a - wins[k - 1].a === HOP;
+  // the next window's match starts inside the previous one's (or just after it)
+  const follows = (p: Cand, c: Cand) => c.t0 >= p.t0 - 0.5 && c.t0 <= p.t1 + 1.5;
+  const score: number[][] = [];
+  const back: number[][] = [];
+  wins.forEach((w, k) => {
+    const n = w.cands.length;
+    score[k] = [];
+    back[k] = [];
+    for (let j = 0; j <= n; j++) {
+      const emit = j < n ? w.cands[j].cost : NONE;
+      if (k === 0) {
+        score[k][j] = emit;
+        back[k][j] = -1;
+        continue;
+      }
+      let best = Infinity;
+      let bi = 0;
+      const pw = wins[k - 1];
+      for (let i = 0; i <= pw.cands.length; i++) {
+        const jump = adjacent(k) && i < pw.cands.length && j < n && !follows(pw.cands[i], w.cands[j]);
+        const v = score[k - 1][i] + (jump ? JUMP : 0);
+        if (v < best) {
+          best = v;
+          bi = i;
+        }
+      }
+      score[k][j] = emit + best;
+      back[k][j] = bi;
+    }
+  });
+  const chosen: number[] = new Array(wins.length).fill(0);
+  const lastRow = score[wins.length - 1];
+  let j = lastRow.indexOf(Math.min(...lastRow));
+  for (let k = wins.length - 1; k >= 0; k--) {
+    chosen[k] = j;
+    j = back[k][j];
+  }
+  const pick = (k: number): Cand | null => (chosen[k] < wins[k].cands.length ? wins[k].cands[chosen[k]] : null);
+
+  // 3. runs of windows that stay together, split into steps of about STEP_WINDOWS windows
+  const runs: number[][] = [];
+  for (let k = 0; k < wins.length; k++) {
+    const c = pick(k);
+    if (!c) continue;
+    const run = runs[runs.length - 1];
+    const prev = run?.[run.length - 1];
+    if (run && prev === k - 1 && adjacent(k) && follows(pick(prev)!, c)) run.push(k);
+    else runs.push([k]);
+  }
+  const steps: LessonStep[] = [];
+  for (const run of runs) {
+    const nChunks = Math.ceil(run.length / STEP_WINDOWS);
+    const size = Math.ceil(run.length / nChunks);
+    for (let c = 0; c < nChunks; c++) {
+      const ks = run.slice(c * size, (c + 1) * size);
+      if (!ks.length) continue;
+      const nextK = run[(c + 1) * size];
+      const first = ks[0];
+      const last = ks[ks.length - 1];
+      const s0 = wins[first].s0;
+      const s1 = nextK !== undefined ? wins[nextK].s0 : wins[last].s1;
+      const t0 = Math.min(...ks.map((k) => pick(k)!.t0));
+      let t1 = Math.max(...ks.map((k) => pick(k)!.t1));
+      // end where the next step starts, unless the matches are whole posture stretches
+      // that both steps share (then the next start says nothing about this one's end)
+      const nextT0 = nextK !== undefined ? pick(nextK)!.t0 : Infinity;
+      if (nextT0 < t1 && nextT0 >= t0 + 0.5 * (s1 - s0)) t1 = nextT0;
+      // a match onto the class's talking is a window across two steps, not a step
+      if (idleShare(X, standX, [t0, t1]) > 0.6) continue;
+      const result = judgeLessonStep(X, S, SM, [s0, s1], [t0, t1], parts, tol, teacher, student);
+      if (result) steps.push({ student: [s0, s1], teacher: [t0, t1], result });
+    }
+  }
+
+  // 4a. the student's dancing found nowhere
+  const owned = (k: number): Span => [wins[k].s0, adjacent(k + 1) ? wins[k + 1].s0 : wins[k].s1];
+  const lost = mergeSpans(wins.map((_, k) => k).filter((k) => !pick(k)).map(owned));
+  const unmatched = subtractSpans(lost, steps.map((s) => s.student)).filter(([a, b]) => b - a >= 2 && idleShare(S, standS, [a, b]) <= 0.5);
+
+  // 4b. dancing in the class that isn't in the student's video. The class's dancing: runs of
+  // frames that aren't idle (still, or standing as when talking), split by pauses of 1 s or
+  // more, where the body or legs move or the pose is a dance posture (gestures while talking
+  // move only the arms)
+  const tauStand = tol + 2 * X.jit.cost;
+  const idle = X.af.map((f, i) => !f || X.still[i] || cost(f, standX) <= tauStand);
+  const active: [number, number][] = [];
+  for (const [a, b] of runsOf(idle.map((x) => !x))) {
+    const last = active[active.length - 1];
+    if (last && a - last[1] - 1 < GRID_FPS) last[1] = b;
+    else active.push([a, b]);
+  }
+  const nT = MOVES_K * NOISE_ENERGY_K * X.jit.cost;
+  const dance: Span[] = [];
+  for (const [a, b] of active) {
+    if (b - a + 1 < 4 * GRID_FPS) continue;
+    const W = slicePrepared(X, a, b + 1);
+    const pose = medianFrame(W.af.filter(present));
+    const e = partEnergy(W, W.af.map((_, i) => i));
+    // seen from the front, bending the knees forward mostly moves the hips up and down
+    const hips = W.bob.filter(Number.isFinite).sort((x, y) => x - y);
+    const rise = hips.length >= GRID_FPS ? hips[Math.floor(0.9 * (hips.length - 1))] - hips[Math.floor(0.1 * (hips.length - 1))] : 0;
+    if (e.legs >= nT || e.torso >= nT || rise >= HIPS_DANCE || (!!pose && legsOff(pose, standX) >= LEGS_DANCE))
+      dance.push([X.G[a].t, X.G[b].t]);
+  }
+  const covered = steps.map((s) => [s.teacher[0] - 1, s.teacher[1] + 1] as Span);
+  debug.log?.("lesson-dance", { dance: dance.map((x) => x.map((y) => +y.toFixed(1))), covered });
+  const left = subtractSpans(dance, covered)
+    .filter(([a, b]) => b - a >= 4)
+    .sort((x, y) => y[1] - y[0] - (x[1] - x[0]))
+    .slice(0, MAX_MISSED_CHECKS);
+  // only claimed missed when it isn't anywhere in the student's video (a repeat of something
+  // they danced isn't missed, and a posture they hold somewhere counts as seen)
+  const missed: Span[] = [];
+  for (const [t0, t1] of left) {
+    const found = locate(slicePrepared(X, gridIndex(X, t0), gridIndex(X, t1) + 1), S, SM, standX);
+    debug.log?.("lesson-missed", { span: [+t0.toFixed(1), +t1.toFixed(1)], found: found && found.map((c) => [+c.t0.toFixed(1), +c.t1.toFixed(1)]) });
+    if (found && !found.length) missed.push([t0, t1]);
+  }
+  missed.sort((a, b) => a[0] - b[0]);
+
+  return {
+    steps,
+    unmatched,
+    missed,
+    message: steps.length ? null : MESSAGES.lessonNone,
+    warnings,
+  };
+}
+
+/** One step of class mode, judged like a single step on the matched stretches of both videos. */
+function judgeLessonStep(
+  X: Prepared,
+  S: Prepared,
+  SM: Prepared,
+  [s0, s1]: Span,
+  [t0, t1]: Span,
+  parts: PartSwitches,
+  tol: number,
+  teacher: PoseTrack,
+  student: PoseTrack,
+): CompareResult | null {
+  const T = slicePrepared(X, gridIndex(X, t0) - PAD, gridIndex(X, t1) + PAD + 1);
+  const ia = gridIndex(S, s0) - PAD;
+  const ib = gridIndex(S, s1) + PAD + 1;
+  const Ss = slicePrepared(S, ia, ib);
+  const SMs = slicePrepared(SM, ia, ib);
+  if (count(T.af) < GRID_FPS || count(Ss.af) < GRID_FPS) return null;
+  const k = kindOf(T);
+  const w: string[] = [];
+  const r = k.kind === "movement" ? movement(T, Ss, SMs, parts, tol, w) : postureOrHold(k.kind, T, Ss, SMs, parts, tol, w);
+  return parts.hands === false ? r : withHands(r, teacher, student);
 }

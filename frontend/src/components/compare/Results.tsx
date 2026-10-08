@@ -25,7 +25,7 @@ const BAND_STYLE: Record<BandLevel, string> = {
   partly: "border-foreground/12 text-foreground/60",
   na: "border-foreground/12 text-foreground/45",
 };
-const PART_NAME: Record<Part | "timing", string> = { arms: "Arms", legs: "Legs", torso: "Torso", timing: "Timing" };
+const PART_NAME: Record<Part | "timing" | "hands", string> = { arms: "Arms", legs: "Legs", torso: "Torso", hands: "Hands", timing: "Timing" };
 
 interface Props {
   result: CompareResult;
@@ -106,8 +106,9 @@ export default function Results({ result: r, parts, onParts, onShowMe, activeTip
             <div className="space-y-3">
               <p className={label}>By body part</p>
               <div className="grid grid-cols-2 gap-2">
-                {(["arms", "legs", "torso", "timing"] as const).map((k) => {
+                {(["arms", "legs", "torso", "hands", "timing"] as const).map((k) => {
                   const b = r.bands[k];
+                  if (!b) return null;
                   return (
                     <div key={k} className={`rounded-sm border bg-foreground/[0.02] px-3 py-2.5 ${BAND_STYLE[b.level]}`}>
                       <p className="mono text-[9px] uppercase tracking-[0.16em] text-foreground/50">{PART_NAME[k]}</p>
@@ -151,7 +152,7 @@ export default function Results({ result: r, parts, onParts, onShowMe, activeTip
             <legend className="mono px-1 text-[10px] uppercase tracking-[0.16em] text-foreground/45">Body parts to judge</legend>
             <p className="text-[0.82rem] leading-snug text-foreground/50">Switch off what the teacher only does in passing.</p>
             <div className="flex flex-wrap gap-2">
-              {(["arms", "legs", "torso", "head"] as const).map((k) => (
+              {(["arms", "hands", "legs", "torso", "head"] as const).map((k) => (
                 <label
                   key={k}
                   className={`mono inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] transition-colors ${

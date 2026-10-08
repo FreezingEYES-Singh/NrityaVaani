@@ -64,6 +64,23 @@ export interface Pt {
   v: number;
 }
 
+/**
+ * One hand: the 21 MediaPipe hand landmarks (wrist 0, thumb 1-4, index 5-8,
+ * middle 9-12, ring 13-16, pinky 17-20).
+ */
+export interface HandFrame {
+  /** Image landmarks, in the same units as Pt (x and y in units of the frame height). */
+  img: Pt[];
+  /** Metres, centred on the hand (MediaPipe hand world landmarks), or null. */
+  world: Pt[] | null;
+}
+
+/** The dancer's hands in one frame: `l` is found at the pose's left wrist (15), `r` at the right (16). */
+export interface Hands {
+  l: HandFrame | null;
+  r: HandFrame | null;
+}
+
 /** One processed video frame. */
 export interface PoseFrame {
   /** Media time in seconds (from requestVideoFrameCallback metadata.mediaTime, or the seek target). */
@@ -78,6 +95,8 @@ export interface PoseFrame {
    * A frame with `img === null` is always treated as masked.
    */
   ok: boolean;
+  /** The hands, when the hand pass ran (tracks saved before it existed have none). */
+  hands?: Hands;
 }
 
 /** The pose track of one video over one time range. Produced by extract.ts. */
@@ -100,11 +119,16 @@ export interface PartSwitches {
   legs: boolean;
   torso: boolean;
   head: boolean;
+  /** Hand shapes (fingers, mudras). Never used for aligning, only judged. */
+  hands: boolean;
 }
 
-export const ALL_PARTS_ON: PartSwitches = { arms: true, legs: true, torso: true, head: true };
+export const ALL_PARTS_ON: PartSwitches = { arms: true, legs: true, torso: true, head: true, hands: true };
 
+/** Body parts judged from the pose. */
 export type Part = "arms" | "legs" | "torso";
+/** Everything a tip can be about. */
+export type TipPart = Part | "hands";
 
 export type StepKind = "movement" | "posture" | "hold";
 
@@ -130,9 +154,9 @@ export interface JointMarker {
 }
 
 export interface Tip {
-  /** Stable id, e.g. "arm-height:low", "knee-rollin", "bobbing", "range:arms". */
+  /** Stable id, e.g. "arm-height:low", "knee-rollin", "bobbing", "range:arms", "hand:ring". */
   id: string;
-  part: Part;
+  part: TipPart;
   /** Short imperative headline, e.g. "Raise your arms higher". */
   title: string;
   /** One or two sentences of evidence and how to fix it. Never uses left/right unless `sideKnown`. */
@@ -190,7 +214,7 @@ export interface CompareResult {
   /** Up to 3, ordered by severity, at most one per part. */
   tips: Tip[];
   strength: Strength | null;
-  bands: Record<Part | "timing", Band>;
+  bands: Record<Part | "timing", Band> & { hands?: Band };
   /** Reasons things were not judged, as plain sentences ("Knees hidden in 70% of frames, so legs were partly checked."). */
   notChecked: string[];
   /** Plain-sentence warnings (different camera angle, second person, mostly-still selection...). */
@@ -199,6 +223,28 @@ export interface CompareResult {
   map: TimeMapPoint[];
   /** Human message when not found, e.g. "We couldn't find the teacher's step in your video." */
   message: string | null;
+}
+
+/** One step of a class-mode comparison: a stretch of the student's dancing and where the class shows it. */
+export interface LessonStep {
+  /** Seconds of the student's video. */
+  student: [number, number];
+  /** Seconds of the teacher's (class) video. */
+  teacher: [number, number];
+  /** The usual comparison of this stretch: tips, bands, timing and the time map. */
+  result: CompareResult;
+}
+
+/** Class mode: the student's dance, found step by step in a long class video. */
+export interface LessonResult {
+  steps: LessonStep[];
+  /** Stretches of the student's dancing found nowhere in the class video. */
+  unmatched: [number, number][];
+  /** Dancing in the class video (body or footwork, not gestures while talking) not found in the student's video. */
+  missed: [number, number][];
+  /** Human message when nothing was found. */
+  message: string | null;
+  warnings: string[];
 }
 
 /** Reference-free result for YouTube "practise beside" mode (never compared with the YouTube video). */

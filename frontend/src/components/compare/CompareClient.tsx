@@ -29,12 +29,23 @@ import TrimBar, { LONG_STEP, MIN_STEP } from "@/components/compare/TrimBar";
 import DropZone from "@/components/compare/DropZone";
 import YouTubeCapture from "@/components/compare/YouTubeCapture";
 import Results from "@/components/compare/Results";
+import { LessonGaps, LessonNav } from "@/components/compare/LessonSteps";
 import { Eyebrow, Headline, Rule } from "@/components/ui/editorial";
-import { ALL_PARTS_ON, ExtractError, type CompareResult, type ExtractProgress, type PartSwitches, type PoseTrack, type Tip } from "@/lib/compare/types";
+import {
+  ALL_PARTS_ON,
+  ExtractError,
+  type CompareResult,
+  type ExtractProgress,
+  type LessonResult,
+  type PartSwitches,
+  type PoseTrack,
+  type Tip,
+} from "@/lib/compare/types";
 import { MODEL_DOWNLOAD_MB, extractPose, preloadModels, primeVideo } from "@/lib/compare/extract";
 import { suggestMovingPart } from "@/lib/compare/motionScan";
-import { runAnalysis, stopAnalysisWorker } from "@/lib/compare/runAnalysis";
+import { runAnalysis, runLesson, stopAnalysisWorker } from "@/lib/compare/runAnalysis";
 import { recordElement, resolveDuration } from "@/lib/compare/tabRecord";
+import { mapTime, slopeAt } from "@/lib/compare/timemap";
 import {
   deleteSavedSteps,
   fingerprint,
@@ -61,6 +72,31 @@ type Busy = null | { who: "teacher" | "student" | "analysis" | "suggest"; p: Ext
 
 const fmtEta = (s: number | null) => (s === null ? "" : s > 90 ? `about ${Math.round(s / 60)} min left` : `about ${Math.max(1, Math.round(s))} s left`);
 
+/** A marked teacher part at least this long suggests a class video: the dance is compared step by step. */
+const CLASS_MODE_FROM = 45;
+
+/** What the results show when class mode found no step. */
+function emptyResult(message: string | null, warnings: string[]): CompareResult {
+  const na = { level: "na" as const, note: "Not judged" };
+  return {
+    kind: "movement",
+    found: false,
+    reading: "none",
+    coverage: 0,
+    mirrored: false,
+    tries: [],
+    pauses: [],
+    timing: { ratio: null, text: null },
+    tips: [],
+    strength: null,
+    bands: { arms: na, legs: na, torso: na, timing: na },
+    notChecked: [],
+    warnings,
+    map: [],
+    message,
+  };
+}
+
 /** Running out of memory surfaces as a RangeError about an array; say what to do instead. */
 function friendly(err: unknown): string {
   const m = err instanceof Error ? err.message : String(err);
@@ -69,23 +105,6 @@ function friendly(err: unknown): string {
   return m;
 }
 
-/** Student time -> teacher time along the smoothed map (straight-line beyond its ends). */
-function mapTime(map: CompareResult["map"], s: number): number {
-  if (!map.length) return s;
-  if (map.length === 1) return map[0].t + (s - map[0].s);
-  let i = 0;
-  while (i < map.length - 2 && s > map[i + 1].s) i++;
-  const a = map[i];
-  const b = map[i + 1];
-  const k = (b.t - a.t) / Math.max(1e-6, b.s - a.s);
-  return a.t + (s - a.s) * k;
-}
-function slopeAt(map: CompareResult["map"], s: number): number {
-  if (map.length < 2) return 1;
-  let i = 0;
-  while (i < map.length - 2 && s > map[i + 1].s) i++;
-  return (map[i + 1].t - map[i].t) / Math.max(1e-6, map[i + 1].s - map[i].s);
-}
 
 export default function CompareClient() {
   // teacher
@@ -106,6 +125,10 @@ export default function CompareClient() {
   const [sTrack, setSTrack] = useState<PoseTrack | null>(null);
   // result
   const [result, setResult] = useState<CompareResult | null>(null);
+  // class mode: the student's dance, step by step; `result` is then the chosen step's
+  const [lesson, setLesson] = useState<LessonResult | null>(null);
+  const [activeStep, setActiveStep] = useState(0);
+  const [modeChoice, setModeChoice] = useState<"one" | "class" | null>(null);
   const [parts, setParts] = useState<PartSwitches>(ALL_PARTS_ON);
   const [activeTip, setActiveTip] = useState<Tip | null>(null);
   const [ghost, setGhost] = useState(false);
@@ -123,6 +146,7 @@ export default function CompareClient() {
   const abortRef = useRef<AbortController | null>(null);
   const urlsRef = useRef<string[]>([]);
   const syncRef = useRef<number | null>(null);
+  const videosRef = useRef<HTMLDivElement>(null);
 
   const track = (u: string) => {
     urlsRef.current.push(u);
@@ -142,6 +166,8 @@ export default function CompareClient() {
     setSName("");
     setSTrack(null);
     setResult(null);
+    setLesson(null);
+    setModeChoice(null);
     setActiveTip(null);
     setBusy(null);
     setError(null);
@@ -193,6 +219,7 @@ export default function CompareClient() {
     setTKey(null);
     setSaved(false);
     setResult(null);
+    setLesson(null);
     // start downloading the model while the step is being marked
     void preloadModels().catch(() => undefined);
   };
@@ -276,6 +303,7 @@ export default function CompareClient() {
     setSUrl(track(URL.createObjectURL(f)));
     setSTrack(null);
     setResult(null);
+    setLesson(null);
   };
 
   const analyseStudent = () => {
@@ -293,7 +321,7 @@ export default function CompareClient() {
         const s = await extractPose(v, [0, dur], { onProgress: onProgress("student"), signal: ac.signal });
         setSTrack(s);
         setBusy({ who: "analysis", p: null });
-        setResult(await runAnalysis(tTrack, s, parts));
+        await compareTracks(tTrack, s, parts, mode);
       } catch (err) {
         if (!(err instanceof ExtractError && err.code === "aborted")) setError(friendly(err));
       } finally {
@@ -302,18 +330,45 @@ export default function CompareClient() {
     })();
   };
 
-  const changeParts = async (p: PartSwitches) => {
-    setParts(p);
+  /** One step, or class mode; in class mode the first step is shown. */
+  const compareTracks = async (t: PoseTrack, st: PoseTrack, p: PartSwitches, m: "one" | "class") => {
+    if (m === "class") {
+      setBusy({
+        who: "analysis",
+        p: { stage: "processing", fraction: 0.05, etaSec: null, message: "Finding each step of your dance in the class video (a long class takes a minute)" },
+      });
+      const L = await runLesson(t, st, p);
+      setLesson(L);
+      setActiveStep(0);
+      setResult(L.steps[0]?.result ?? emptyResult(L.message, L.warnings));
+    } else {
+      setLesson(null);
+      setResult(await runAnalysis(t, st, p));
+    }
+    setActiveTip(null);
+  };
+
+  const rerun = async (p: PartSwitches, m: "one" | "class") => {
     if (!tTrack || !sTrack) return;
+    pauseBoth();
     setBusy({ who: "analysis", p: null });
     try {
-      setResult(await runAnalysis(tTrack, sTrack, p));
-      setActiveTip(null);
+      await compareTracks(tTrack, sTrack, p, m);
     } catch (err) {
       setError(friendly(err));
     } finally {
       setBusy(null);
     }
+  };
+
+  const changeParts = (p: PartSwitches) => {
+    setParts(p);
+    void rerun(p, mode);
+  };
+
+  const changeMode = (m: "one" | "class") => {
+    setModeChoice(m);
+    void rerun(parts, m);
   };
 
   /* ---------------- step 3: synced playback and Show me ---------------- */
@@ -368,6 +423,35 @@ export default function CompareClient() {
     if (tv && result) tv.currentTime = Math.max(0, tip.at.teacher ?? mapTime(result.map, tip.at.student));
   };
 
+  /** Class mode: show one step (both videos go to its start). */
+  const selectStep = (i: number) => {
+    const st = lesson?.steps[i];
+    if (!st) return;
+    pauseBoth();
+    setActiveStep(i);
+    setResult(st.result);
+    setActiveTip(null);
+    const s0 = st.result.tries[0]?.start ?? st.student[0];
+    const sv = studentRef.current?.video;
+    const tv = tPlayRef.current?.video;
+    if (sv) sv.currentTime = s0;
+    if (tv) tv.currentTime = Math.max(0, st.result.map.length ? mapTime(st.result.map, s0) : st.teacher[0]);
+  };
+
+  /** Play one video alone over a span (class mode's "Watch"). */
+  const watchOne = (which: "teacher" | "student", [from, until]: [number, number]) => {
+    pauseBoth();
+    const v = which === "teacher" ? tPlayRef.current?.video : studentRef.current?.video;
+    if (!v) return;
+    v.currentTime = from;
+    void v.play().catch(() => undefined);
+    setPlaying(true);
+    syncRef.current = window.setInterval(() => {
+      if (v.paused || v.ended || v.currentTime >= until) pauseBoth();
+    }, 250);
+    videosRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+
   useEffect(
     () => () => {
       if (syncRef.current !== null) window.clearInterval(syncRef.current);
@@ -378,8 +462,8 @@ export default function CompareClient() {
   // ?debug=1 exposes the tracks and the result to tests (they never leave the tab)
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("debug") === "1")
-      (window as unknown as { __compare: unknown }).__compare = { teacher: tTrack, student: sTrack, result, recordElement, resolveDuration };
-  }, [tTrack, sTrack, result]);
+      (window as unknown as { __compare: unknown }).__compare = { teacher: tTrack, student: sTrack, result, lesson, recordElement, resolveDuration };
+  }, [tTrack, sTrack, result, lesson]);
 
   const ghostInfo = useMemo(
     () => (ghost && tTrack && result?.found ? { track: tTrack, timeAt: (s: number) => mapTime(result.map, s), mirrored: result.mirrored } : null),
@@ -419,6 +503,7 @@ export default function CompareClient() {
   const ghostBtn = `${pill} border border-foreground/20 text-foreground/70 hover:border-primary/60 hover:text-primary`;
   const stepLen = range[1] - range[0];
   const stage: 1 | 2 | 3 = result ? 3 : tTrack ? 2 : 1;
+  const mode: "one" | "class" = modeChoice ?? (stepLen >= CLASS_MODE_FROM ? "class" : "one");
   const notAVideo = () => setError("That file isn't a video. Choose an MP4, MOV or WebM file.");
 
   const alerts =
@@ -467,8 +552,9 @@ export default function CompareClient() {
           <Eyebrow tone="primary">Compare · beta</Eyebrow>
           <Headline as="h1">Compare with your teacher</Headline>
           <p className="serif max-w-[62ch] text-[1.02rem] leading-[1.66] text-foreground/65 sm:text-[1.09rem]">
-            Mark a step, or a whole dance, in your teacher&apos;s video, add a video of yourself doing it, and see the two side by side with a
-            stick figure on each and <strong className="font-semibold text-foreground">up to three corrections</strong>.
+            Mark a step, or a whole class, in your teacher&apos;s video, add a video of yourself dancing it, and see the two side by side
+            with the body, hands and fingers traced on each, and <strong className="font-semibold text-foreground">corrections</strong> for
+            each step.
           </p>
         </header>
 
@@ -544,15 +630,16 @@ export default function CompareClient() {
                 />
                 <ul className="space-y-5 self-center">
                   <Hint icon={<Scissors size={16} />} title="Mark the part to compare">
-                    One step or the whole dance, from {MIN_STEP} s. The video can be long, with talking and many steps; only
-                    the part you mark is processed. A part over {LONG_STEP / 60} minute takes longer.
+                    One step, or the whole class: from {MIN_STEP} s to the whole video. For a long class, mark it all and choose
+                    &ldquo;Several steps from the class&rdquo; in step 2: each step of your dance is found in it. A part over{" "}
+                    {LONG_STEP / 60} minute takes longer to prepare.
                   </Hint>
                   <Hint icon={<Wand2 size={16} />} title="Not sure where it starts?">
                     Pause near the step and tap &ldquo;Find the moving part&rdquo;.
                   </Hint>
                 </ul>
                 <div className="border-t border-foreground/10 pt-6 lg:col-span-2">
-                  <YouTubeCapture who="teacher" onFile={chooseTeacher} />
+                  <YouTubeCapture onFile={chooseTeacher} />
                 </div>
               </div>
             ) : (
@@ -581,6 +668,8 @@ export default function CompareClient() {
                         if (tTrack) {
                           setTTrack(null);
                           setResult(null);
+                          setLesson(null);
+    setLesson(null);
                         }
                       }}
                       disabled={!!busy}
@@ -631,6 +720,31 @@ export default function CompareClient() {
             status={stage < 2 ? <Chip tone="locked">Locked</Chip> : result ? <Chip tone="ready">Compared</Chip> : undefined}
           >
             {stage === 2 && alerts}
+            {tTrack && (
+              <fieldset className="mb-6 space-y-2.5">
+                <legend className="mono mb-2.5 text-[10px] uppercase tracking-[0.18em] text-foreground/55">What&apos;s in your video?</legend>
+                <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
+                  <ModeOption
+                    active={mode === "one"}
+                    title="The part I marked"
+                    onClick={() => changeMode("one")}
+                    disabled={!!busy}
+                    testId="mode-one"
+                  >
+                    The same step or dance as the teacher&apos;s marked part, once or a few times.
+                  </ModeOption>
+                  <ModeOption
+                    active={mode === "class"}
+                    title="Several steps from the class"
+                    onClick={() => changeMode("class")}
+                    disabled={!!busy}
+                    testId="mode-class"
+                  >
+                    Your dance has steps taught across the teacher&apos;s video. Each one is found in it and checked.
+                  </ModeOption>
+                </div>
+              </fieldset>
+            )}
             {!sUrl ? (
               <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
                 <div className="space-y-3">
@@ -638,7 +752,7 @@ export default function CompareClient() {
                     className="min-h-[220px]"
                     icon={tTrack ? <Upload size={20} /> : <Lock size={18} />}
                     title={tTrack ? "Choose or drop your video" : "Prepare the teacher's step first"}
-                    hint="MP4, MOV or WebM"
+                    hint="From your gallery, Google Drive or Files · MP4, MOV or WebM"
                     onFile={chooseStudent}
                     onReject={notAVideo}
                     disabled={!tTrack}
@@ -663,11 +777,6 @@ export default function CompareClient() {
                   )}
                 </div>
                 <div className="self-center">{recordingTips}</div>
-                {tTrack && (
-                  <div className="border-t border-foreground/10 pt-6 lg:col-span-2">
-                    <YouTubeCapture who="student" onFile={chooseStudent} />
-                  </div>
-                )}
               </div>
             ) : !result ? (
               <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-10">
@@ -705,7 +814,8 @@ export default function CompareClient() {
             {result && tUrl && sUrl ? (
               <div className="space-y-6" data-testid="results">
                 {alerts}
-                <div className="grid gap-4 md:grid-cols-2">
+                {lesson && sTrack && <LessonNav lesson={lesson} duration={sTrack.range[1]} active={activeStep} onSelect={selectStep} />}
+                <div ref={videosRef} className="grid gap-4 md:grid-cols-2">
                   <VideoPanel
                     ref={tPlayRef}
                     src={tUrl}
@@ -756,6 +866,9 @@ export default function CompareClient() {
                 </div>
                 <Results result={result} parts={parts} onParts={changeParts} onShowMe={showMe} activeTip={activeTip?.id ?? null} />
                 {busyLine("analysis")}
+                {lesson && (
+                  <LessonGaps lesson={lesson} onWatchClass={(sp) => watchOne("teacher", sp)} onWatchYou={(sp) => watchOne("student", sp)} />
+                )}
                 <div className="flex flex-wrap gap-2 border-t border-foreground/10 pt-6">
                   <FilePick className={solid} label="Try another video of yourself" icon={<Upload size={14} />} onFile={chooseStudent} onReject={notAVideo} />
                   <button
@@ -844,6 +957,44 @@ function StepPanel({
       </div>
       {children ? <div className="mt-6 sm:mt-8">{children}</div> : null}
     </section>
+  );
+}
+
+function ModeOption({
+  active,
+  title,
+  children,
+  onClick,
+  disabled,
+  testId,
+}: {
+  active: boolean;
+  title: string;
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  testId?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      onClick={onClick}
+      disabled={disabled}
+      data-testid={testId}
+      className={`flex items-start gap-3 rounded-sm border px-4 py-3 text-left transition-colors disabled:opacity-50 ${
+        active ? "border-primary bg-primary/[0.07]" : "border-foreground/12 hover:border-primary/50"
+      }`}
+    >
+      <span className={`mt-1 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border ${active ? "border-primary" : "border-foreground/30"}`}>
+        {active && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+      </span>
+      <span>
+        <span className="mono block text-[10px] uppercase tracking-[0.16em] text-foreground/85">{title}</span>
+        <span className="serif mt-1 block text-[0.95rem] leading-snug text-foreground/60">{children}</span>
+      </span>
+    </button>
   );
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import type { JointMarker, PoseFrame, PoseTrack, Pt } from "@/lib/compare/types";
+import type { HandFrame, Hands, JointMarker, PoseFrame, PoseTrack, Pt } from "@/lib/compare/types";
 
 /**
  * A <video> with the stick figure drawn over it (05-mvp.md §3.6, "Marking joints").
@@ -18,7 +18,17 @@ const BODY: [number, number][] = [
   [23, 25], [25, 27], [27, 29], [29, 31], [27, 31],
   [24, 26], [26, 28], [28, 30], [30, 32], [28, 32],
 ];
-const JOINTS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 31, 32];
+const JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 31, 32];
+/** Ears, eyes and nose as one line, and the mouth. */
+const FACE: [number, number][] = [[7, 2], [2, 0], [0, 5], [5, 8], [9, 10]];
+/** MediaPipe's 21-point hand. */
+const HAND: [number, number][] = [
+  [0, 1], [1, 2], [2, 3], [3, 4],
+  [0, 5], [5, 6], [6, 7], [7, 8],
+  [5, 9], [9, 10], [10, 11], [11, 12],
+  [9, 13], [13, 14], [14, 15], [15, 16],
+  [13, 17], [17, 18], [18, 19], [19, 20], [0, 17],
+];
 
 export interface Ghost {
   track: PoseTrack;
@@ -30,6 +40,30 @@ export interface Ghost {
 
 export interface VideoPanelHandle {
   video: HTMLVideoElement | null;
+}
+
+/** The hands nearest time t: hands are read up to 15 times a second, so look a few frames either side. */
+export function handsAt(track: PoseTrack | null, t: number): Hands | null {
+  const f = track?.frames;
+  if (!f?.length) return null;
+  let lo = 0;
+  let hi = f.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (f[mid].t < t) lo = mid + 1;
+    else hi = mid;
+  }
+  let best: Hands | null = null;
+  let bestD = 0.1;
+  for (let i = Math.max(0, lo - 4); i <= Math.min(f.length - 1, lo + 4); i++) {
+    const h = f[i].hands;
+    const d = Math.abs(f[i].t - t);
+    if (h && (h.l || h.r) && d <= bestD) {
+      best = h;
+      bestD = d;
+    }
+  }
+  return best;
 }
 
 /** Nearest frame to time t (frames sorted by t), or null if none is within 0.2 s. */
@@ -82,6 +116,55 @@ function drawFigure(
     ctx.fillStyle = "#ffe0a8";
     ctx.beginPath();
     ctx.arc(p.x * H, p.y * H, width * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawLines(ctx: CanvasRenderingContext2D, pts: Pt[], edges: [number, number][], H: number, color: string, width: number, alpha: number, minV = 0.5) {
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  for (const [a, b] of edges) {
+    const p = pts[a];
+    const q = pts[b];
+    if (Math.min(p.v, q.v) < minV) continue;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(p.x * H, p.y * H);
+    ctx.lineTo(q.x * H, q.y * H);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** The head: ears, eyes, nose and mouth, and a ring around them. */
+function drawHead(ctx: CanvasRenderingContext2D, pts: Pt[], H: number, color: string, width: number, alpha: number) {
+  drawLines(ctx, pts, FACE, H, color, width * 0.6, alpha * 0.9);
+  const ears = [pts[7], pts[8]].filter((p) => p.v >= 0.5);
+  const nose = pts[0];
+  if (nose.v < 0.5) return;
+  const r = ears.length === 2 ? Math.hypot(ears[0].x - ears[1].x, ears[0].y - ears[1].y) * 0.75 : null;
+  if (!r) return;
+  ctx.globalAlpha = alpha * 0.8;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width * 0.6;
+  ctx.beginPath();
+  ctx.arc(((ears[0].x + ears[1].x) / 2) * H, ((ears[0].y + ears[1].y) / 2) * H, r * H, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+/** One hand: its bones, and a dot on each fingertip. */
+function drawHand(ctx: CanvasRenderingContext2D, hand: HandFrame, H: number, color: string, width: number, alpha: number) {
+  const pts = hand.img;
+  drawLines(ctx, pts, HAND, H, color, Math.max(1.2, width * 0.45), alpha, 0);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = "#ffe0a8";
+  for (const j of [4, 8, 12, 16, 20]) {
+    ctx.beginPath();
+    ctx.arc(pts[j].x * H, pts[j].y * H, Math.max(1.5, width * 0.45), 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -224,6 +307,10 @@ const VideoPanel = forwardRef<VideoPanelHandle, Props>(function VideoPanel(
       }
       if (f?.img) {
         drawFigure(ctx, f.img, Hc, primary, lw, 1);
+        drawHead(ctx, f.img, Hc, primary, lw, 1);
+        const hs = handsAt(tr, v.currentTime);
+        if (hs?.l) drawHand(ctx, hs.l, Hc, primary, lw, 1);
+        if (hs?.r) drawHand(ctx, hs.r, Hc, primary, lw, 1);
         if (mk) drawMarker(ctx, f.img, Hc, mk.marker, mk.joints, Math.max(0.6, scale));
       }
     };

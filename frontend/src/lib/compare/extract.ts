@@ -4,6 +4,10 @@
  * - Models: PoseLandmarker "full", VIDEO mode with numPoses 1 (MediaPipe only
  *   smooths landmarks for a single pose), plus an IMAGE-mode pass with
  *   numPoses 3 about once a second that checks for other people.
+ * - Hands: a HandLandmarker per side runs on a square cut from the full-size
+ *   frame around each wrist (placed and sized from the pose), up to 15 times a
+ *   second. In a full-body video the hands are too small to find in the whole
+ *   frame. If the hand model can't load, the body is still tracked.
  * - Frames are drawn into our own canvas (<= 960 px on the long side), and the
  *   models get our own WebGL canvas, so a lost GPU context is noticed.
  * - Reading: muted playback with requestVideoFrameCallback, slowing to 0.5x
@@ -13,14 +17,20 @@
  * - Nothing leaves the device: the WASM runtime is served by this site and the
  *   model file is only downloaded.
  */
-import { FilesetResolver, PoseLandmarker, type PoseLandmarkerResult } from "@mediapipe/tasks-vision";
-import { ExtractError, type ExtractProgress, type PoseFrame, type PoseTrack, type Pt } from "./types";
+import { FilesetResolver, HandLandmarker, PoseLandmarker, type PoseLandmarkerResult } from "@mediapipe/tasks-vision";
+import { ExtractError, type ExtractProgress, type HandFrame, type Hands, type PoseFrame, type PoseTrack, type Pt } from "./types";
 
 export const WASM_BASE = "/mediapipe/wasm";
 export const POSE_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
-/** Shown before the first use: the WASM runtime (11.5 MB) plus the pose model (9.4 MB). */
-export const MODEL_DOWNLOAD_MB = 21;
+export const HAND_MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+/** Shown before the first use: the WASM runtime (11.5 MB), the pose model (9.4 MB) and the hand model (7.8 MB). */
+export const MODEL_DOWNLOAD_MB = 29;
+
+/** Side of the square the hand crops are drawn into. */
+const HAND_PX = 256;
+const HAND_EVERY_SEC = 1 / 15;
 
 const MAX_SIDE = 960;
 /** Below this many processed frames per video-second, playback slows down. */
@@ -32,22 +42,31 @@ type Delegate = "GPU" | "CPU";
 interface Models {
   main: PoseLandmarker;
   identity: PoseLandmarker;
+  /** One per side, so each keeps tracking its own hand. Null when the hand model isn't available. */
+  handL: HandLandmarker | null;
+  handR: HandLandmarker | null;
   delegate: Delegate;
   lost: boolean;
 }
 
 let filesetP: ReturnType<typeof FilesetResolver.forVisionTasks> | null = null;
 let modelBytesP: Promise<Uint8Array> | null = null;
+let handBytesP: Promise<Uint8Array | null> | null = null;
 let lastTs = 0;
 
 function report(on: ((p: ExtractProgress) => void) | undefined, p: Partial<ExtractProgress> & Pick<ExtractProgress, "stage">) {
   on?.({ fraction: 0, etaSec: null, message: null, ...p });
 }
 
-async function downloadModel(onProgress?: (p: ExtractProgress) => void): Promise<Uint8Array> {
-  const res = await fetch(POSE_MODEL_URL);
+async function downloadModel(
+  onProgress?: (p: ExtractProgress) => void,
+  url = POSE_MODEL_URL,
+  message = "Downloading the pose model",
+  expected = 9.4e6,
+): Promise<Uint8Array> {
+  const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`model HTTP ${res.status}`);
-  const total = Number(res.headers.get("content-length")) || 9.4e6;
+  const total = Number(res.headers.get("content-length")) || expected;
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let got = 0;
@@ -56,7 +75,7 @@ async function downloadModel(onProgress?: (p: ExtractProgress) => void): Promise
     if (done) break;
     chunks.push(value);
     got += value.length;
-    report(onProgress, { stage: "loading-model", fraction: Math.min(1, got / total), message: "Downloading the pose model" });
+    report(onProgress, { stage: "loading-model", fraction: Math.min(1, got / total), message });
   }
   const out = new Uint8Array(got);
   let o = 0;
@@ -73,6 +92,9 @@ export async function preloadModels(onProgress?: (p: ExtractProgress) => void): 
     filesetP ??= FilesetResolver.forVisionTasks(WASM_BASE);
     modelBytesP ??= downloadModel(onProgress);
     await Promise.all([filesetP, modelBytesP]);
+    // the hand model is optional: without it the body is still compared
+    handBytesP ??= downloadModel(onProgress, HAND_MODEL_URL, "Downloading the hand model", 7.8e6).catch(() => null);
+    await handBytesP;
   } catch (e) {
     filesetP = null;
     modelBytesP = null;
@@ -95,8 +117,28 @@ async function createModels(delegate: Delegate): Promise<Models> {
   };
   const main = await mk("VIDEO", 1);
   const identity = await mk("IMAGE", 3);
-  const m: Models = { main: main.lm, identity: identity.lm, delegate, lost: false };
-  for (const c of [main.canvas, identity.canvas]) c.addEventListener("webglcontextlost", () => (m.lost = true));
+  const canvases = [main.canvas, identity.canvas];
+  const handBytes = await handBytesP;
+  const mkHand = async (): Promise<HandLandmarker | null> => {
+    if (!handBytes) return null;
+    try {
+      const canvas = document.createElement("canvas");
+      const lm = await HandLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetBuffer: handBytes, delegate },
+        runningMode: "VIDEO",
+        numHands: 2,
+        canvas: delegate === "GPU" ? canvas : undefined,
+      });
+      canvases.push(canvas);
+      return lm;
+    } catch {
+      return null;
+    }
+  };
+  const handL = await mkHand();
+  const handR = handL ? await mkHand() : null;
+  const m: Models = { main: main.lm, identity: identity.lm, handL, handR, delegate, lost: false };
+  for (const c of canvases) c.addEventListener("webglcontextlost", () => (m.lost = true));
   return m;
 }
 
@@ -128,6 +170,8 @@ function closeModels(m: Models | null) {
   try {
     m?.main.close();
     m?.identity.close();
+    m?.handL?.close();
+    m?.handR?.close();
   } catch {
     /* already gone */
   }
@@ -228,6 +272,37 @@ function boxOf(pts: Pt[]): { h: number; feet: number; hipX: number; hipY: number
   return { h: y1 - y0, feet: y1, hipX: (pts[23].x + pts[24].x) / 2, hipY: (pts[23].y + pts[24].y) / 2 };
 }
 
+/**
+ * Where to look for one hand, in video pixels: a square ahead of the wrist, along
+ * the pose's hand direction (wrist -> index/pinky), sized from the forearm and the
+ * torso (a foreshortened forearm alone would make it too small).
+ */
+function handBox(img: Pt[], side: "l" | "r", H: number): { x: number; y: number; size: number; handLen: number } | null {
+  const [EL, WR, PI, IN] = side === "l" ? [13, 15, 17, 19] : [14, 16, 18, 20];
+  const wr = img[WR];
+  const el = img[EL];
+  if (wr.v < 0.3) return null;
+  const px = (p: Pt) => [p.x * H, p.y * H] as const;
+  const [wx, wy] = px(wr);
+  const [ex, ey] = px(el);
+  const sh = [((img[11].x + img[12].x) / 2) * H, ((img[11].y + img[12].y) / 2) * H];
+  const hp = [((img[23].x + img[24].x) / 2) * H, ((img[23].y + img[24].y) / 2) * H];
+  const forearm = Math.hypot(wx - ex, wy - ey);
+  const torso = Math.hypot(sh[0] - hp[0], sh[1] - hp[1]);
+  const handLen = Math.max(0.73 * forearm, 0.38 * torso, 12);
+  let dx = wx - ex;
+  let dy = wy - ey;
+  if (img[PI].v > 0.3 && img[IN].v > 0.3) {
+    dx = ((img[PI].x + img[IN].x) / 2) * H - wx;
+    dy = ((img[PI].y + img[IN].y) / 2) * H - wy;
+  }
+  const d = Math.hypot(dx, dy) || 1;
+  const size = 2 * handLen;
+  const cx = wx + (dx / d) * 0.5 * handLen;
+  const cy = wy + (dy / d) * 0.5 * handLen;
+  return { x: cx - size / 2, y: cy - size / 2, size, handLen };
+}
+
 export interface ExtractOptions {
   onProgress?: (p: ExtractProgress) => void;
   signal?: AbortSignal;
@@ -295,6 +370,67 @@ async function extractNow(video: VideoWithRvfc, range: [number, number], opts: E
     }
   }
 
+  // the hand crops are cut from the full-size frame
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const hcanvas = document.createElement("canvas");
+  hcanvas.width = HAND_PX;
+  hcanvas.height = HAND_PX;
+  const hctx = hcanvas.getContext("2d")!;
+  let lastHand = -Infinity;
+  let handFrames = 0;
+  let handFound = 0;
+
+  const handAt = (img: Pt[], side: "l" | "r", ts: number): HandFrame | null => {
+    const lmk = side === "l" ? models!.handL : models!.handR;
+    const box = lmk ? handBox(img, side, vh) : null;
+    if (!lmk || !box) return null;
+    const { x: sx, y: sy, size, handLen } = box;
+    const x0 = Math.max(0, sx);
+    const y0 = Math.max(0, sy);
+    const x1 = Math.min(vw, sx + size);
+    const y1 = Math.min(vh, sy + size);
+    if (x1 - x0 < 8 || y1 - y0 < 8) return null;
+    const k = HAND_PX / size;
+    hctx.fillStyle = "#000";
+    hctx.fillRect(0, 0, HAND_PX, HAND_PX);
+    hctx.drawImage(video, x0, y0, x1 - x0, y1 - y0, (x0 - sx) * k, (y0 - sy) * k, (x1 - x0) * k, (y1 - y0) * k);
+    const res = lmk.detectForVideo(hcanvas, ts);
+    // the hand whose wrist is nearest the pose's wrist, if it is near enough and hand-sized
+    const wr = img[side === "l" ? 15 : 16];
+    let best = -1;
+    let bestD = Infinity;
+    res.landmarks.forEach((h, i) => {
+      const d = Math.hypot(sx + h[0].x * size - wr.x * vh, sy + h[0].y * size - wr.y * vh);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    if (best < 0 || bestD > 0.7 * handLen) return null;
+    const h = res.landmarks[best];
+    const palm = Math.hypot((h[9].x - h[0].x) * size, (h[9].y - h[0].y) * size);
+    if (palm < 0.2 * handLen || palm > 1.2 * handLen) return null;
+    const w = res.worldLandmarks[best];
+    return {
+      img: h.map((p) => ({ x: (sx + p.x * size) / vh, y: (sy + p.y * size) / vh, z: (p.z * size) / vh, v: 1 })),
+      world: w ? w.map((p) => ({ x: p.x, y: p.y, z: p.z, v: 1 })) : null,
+    };
+  };
+
+  const handsAt = (img: Pt[], t: number, ts: number): Hands | undefined => {
+    if (!models!.handL || t - lastHand < HAND_EVERY_SEC - 1e-3) return undefined;
+    lastHand = t;
+    handFrames++;
+    try {
+      const hands = { l: handAt(img, "l", ts), r: handAt(img, "r", ts) };
+      if (hands.l || hands.r) handFound++;
+      return hands;
+    } catch {
+      return undefined; // the hand pass never fails a frame
+    }
+  };
+
   const frames: PoseFrame[] = [];
   const warnings: string[] = [];
   const base = lastTs + 10_000;
@@ -347,7 +483,7 @@ async function extractNow(video: VideoWithRvfc, range: [number, number], opts: E
         /* the identity pass is a check, never a reason to fail */
       }
     }
-    frames.push({ t, img, world, ok });
+    frames.push({ t, img, world, ok, hands: handsAt(img, t, ts) });
   };
 
   const progress = (t: number, message: string | null) => {
@@ -404,6 +540,8 @@ async function extractNow(video: VideoWithRvfc, range: [number, number], opts: E
   if (identityChecks >= 3 && secondPerson / identityChecks >= 0.2)
     warnings.push("Someone else is in the video for part of the time; the dancer nearest the camera was followed.");
   if (sideways / detections > 0.6) warnings.push("The dancer looks sideways: the video may be rotated. Results may be poor.");
+  if (handFrames >= 15 && handFound / handFrames < 0.3)
+    warnings.push("The hands were too small or hidden to read in most frames, so hand shapes can't be checked well. Film closer to see mudras.");
   const span = Math.max(1e-3, end - start);
   frames.sort((a, b) => a.t - b.t);
   report(onProgress, { stage: "done", fraction: 1 });

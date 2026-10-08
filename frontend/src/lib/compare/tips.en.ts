@@ -120,4 +120,6 @@ export const MESSAGES = {
   view: "Your camera angle differs from the teacher's by more than 30°, so arm height, spreads and side tilt weren't checked.",
   mostlyStill: "Much of the marked teacher part is still. If the teacher is talking there, mark a tighter range.",
   torsoPartly: "Partly checked: side tilt only (forward lean needs a side view).",
+  lessonNone: "We couldn't find your dancing in the class video. Check that it's the same steps, filmed from the front, with your whole body in view.",
+  lessonNoDance: "Your video seems to have no dancing in it: you're still, or not in view, most of the time.",
 };
