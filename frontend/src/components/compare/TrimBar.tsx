@@ -1,25 +1,35 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { Crosshair, Info, Minus, Play, Plus, Square } from "lucide-react";
+import { Crosshair, Expand, Info, Minus, Play, Plus, Square } from "lucide-react";
 
 /**
- * Marking the one step to practise (05-mvp.md §1 step 1, F15): one timeline
- * with a handle for each end, "Set to playhead" for each end, ±0.5 s nudges
- * and "Play selection". The handles are real sliders, so they work with a
- * keyboard and a screen reader, and on a 50-minute file on a phone.
+ * Marking the part to compare (05-mvp.md §1 step 1, F15): one timeline with a
+ * handle for each end, "Start here" / "End here" at the playhead, ±0.5 s
+ * nudges, "Play selection" and "Whole video". The handles are real sliders, so
+ * they work with a keyboard and a screen reader, and on a 50-minute file on a phone.
+ *
+ * There's no upper limit: the person decides how long. Past LONG_STEP the note
+ * says it will take longer and needs more memory.
  *
  * A video up to VIEW_ALL long is shown whole; a longer one is shown as a
  * window around the selection, which follows it when it nears an edge.
  */
 
 export const MIN_STEP = 2;
-export const MAX_STEP = 60;
+/** Longer than this gets the "takes longer" note. */
+export const LONG_STEP = 60;
 
 const VIEW_ALL = 180;
-const VIEW_WIDTH = 120;
+const VIEW_MIN = 120;
 /** The step length "Set to playhead" falls back to when the other end is in the way. */
 const DEFAULT_STEP = 8;
+
+const fmtLen = (t: number) => {
+  if (t < 60) return `${t.toFixed(1)} s`;
+  const s = Math.round(t);
+  return `${Math.floor(s / 60)} min ${s % 60} s`;
+};
 
 const fmt = (t: number) => {
   const m = Math.floor(t / 60);
@@ -39,9 +49,10 @@ interface Props {
 
 function viewAround(duration: number, a: number, b: number): [number, number] {
   if (duration <= VIEW_ALL) return [0, duration];
+  const width = Math.min(duration, Math.max(VIEW_MIN, 2 * (b - a) + 20));
   const mid = (a + b) / 2;
-  const v0 = Math.max(0, Math.min(duration - VIEW_WIDTH, mid - VIEW_WIDTH / 2));
-  return [v0, v0 + VIEW_WIDTH];
+  const v0 = Math.max(0, Math.min(duration - width, mid - width / 2));
+  return [v0, v0 + width];
 }
 
 export default function TrimBar({ video, getVideo, duration, range, onChange, disabled }: Props) {
@@ -76,7 +87,7 @@ export default function TrimBar({ video, getVideo, duration, range, onChange, di
 
   const [a, b] = range;
   const len = b - a;
-  const atLimit = len >= MAX_STEP - 0.05;
+  const long = len > LONG_STEP;
 
   // keep the window still while a handle is dragged; follow the selection otherwise
   // (adjusted during render, React's pattern for state that follows props)
@@ -87,31 +98,23 @@ export default function TrimBar({ video, getVideo, duration, range, onChange, di
     if ((want[0] !== v0 || want[1] !== v1) && (duration <= VIEW_ALL || a < v0 + margin || b > v1 - margin)) setView(want);
   }
 
-  // moving one end past the limits pulls the other end along
+  // moving one end into the other pushes it along, keeping at least MIN_STEP
   const setStart = (x: number) => {
     x = Math.max(0, Math.min(x, duration - MIN_STEP));
-    let y = b;
-    if (y - x < MIN_STEP) y = x + MIN_STEP;
-    if (y - x > MAX_STEP) y = x + MAX_STEP;
-    onChange([x, Math.min(duration, y)]);
+    onChange([x, Math.min(duration, Math.max(b, x + MIN_STEP))]);
   };
   const setEnd = (y: number) => {
     y = Math.min(duration, Math.max(y, MIN_STEP));
-    let x = a;
-    if (y - x < MIN_STEP) x = y - MIN_STEP;
-    if (y - x > MAX_STEP) x = y - MAX_STEP;
-    onChange([Math.max(0, x), y]);
+    onChange([Math.max(0, Math.min(a, y - MIN_STEP)), y]);
   };
-  // "Set to playhead": if the other end is in the way, it moves to make a DEFAULT_STEP step
+  // at the playhead: if the other end is in the way, it moves to make a DEFAULT_STEP step
   const startHere = () => {
     const x = Math.max(0, Math.min(now, duration - MIN_STEP));
-    const y = b - x >= MIN_STEP && b - x <= MAX_STEP ? b : Math.min(duration, x + DEFAULT_STEP);
-    onChange([x, y]);
+    onChange([x, b - x >= MIN_STEP ? b : Math.min(duration, x + DEFAULT_STEP)]);
   };
   const endHere = () => {
     const y = Math.min(duration, Math.max(now, MIN_STEP));
-    const x = y - a >= MIN_STEP && y - a <= MAX_STEP ? a : Math.max(0, y - DEFAULT_STEP);
-    onChange([x, y]);
+    onChange([y - a >= MIN_STEP ? a : Math.max(0, y - DEFAULT_STEP), y]);
   };
 
   const frac = (t: number) => Math.max(0, Math.min(1, (t - v0) / Math.max(1e-6, v1 - v0)));
@@ -191,10 +194,10 @@ export default function TrimBar({ video, getVideo, duration, range, onChange, di
   return (
     <div className="space-y-4" role="group" aria-label="Mark the step">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="mono text-[10px] uppercase tracking-[0.18em] text-foreground/55">Mark one step</p>
+        <p className="mono text-[10px] uppercase tracking-[0.18em] text-foreground/55">Mark the part to compare</p>
         <p className="mono text-[11px] tabular-nums">
-          <span className={atLimit ? "text-primary" : "text-foreground"}>{len.toFixed(1)} s</span>
-          <span className="text-foreground/40"> of {MAX_STEP} s max</span>
+          <span className="text-foreground">{fmtLen(len)}</span>
+          <span className="text-foreground/40"> selected</span>
         </p>
       </div>
 
@@ -242,15 +245,20 @@ export default function TrimBar({ video, getVideo, duration, range, onChange, di
         {endField("end")}
       </div>
 
-      <button type="button" className={`${small} w-full py-2`} disabled={disabled} onClick={playSelection}>
-        {playing ? <Square size={12} /> : <Play size={12} />} {playing ? "Stop" : "Play selection"}
-      </button>
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" className={`${small} py-2`} disabled={disabled} onClick={playSelection}>
+          {playing ? <Square size={12} /> : <Play size={12} />} {playing ? "Stop" : "Play selection"}
+        </button>
+        <button type="button" className={`${small} py-2`} disabled={disabled} onClick={() => onChange([0, duration])}>
+          <Expand size={12} /> Whole video
+        </button>
+      </div>
 
-      <p className={`flex items-start gap-2 text-[0.85rem] leading-snug ${atLimit ? "text-primary" : "text-foreground/50"}`} aria-live="polite">
+      <p className={`flex items-start gap-2 text-[0.85rem] leading-snug ${long ? "text-primary" : "text-foreground/50"}`} aria-live="polite">
         <Info size={14} className="mt-0.5 shrink-0" />
-        {atLimit
-          ? `${MAX_STEP} s is the longest step. For a longer dance, compare it one part at a time.`
-          : `A step can be ${MIN_STEP}–${MAX_STEP} s. Play or scrub the video, then set the start and end, or drag the handles.`}
+        {long
+          ? "A long part takes about as long to prepare as it plays, and needs more memory. Fine on a computer; an older phone may struggle."
+          : "One step or the whole dance, from 2 s. Play or scrub the video, then set the start and end, or drag the handles."}
       </p>
     </div>
   );

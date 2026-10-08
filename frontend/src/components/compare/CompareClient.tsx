@@ -7,7 +7,6 @@ import {
   Check,
   Download,
   Info,
-  Link2,
   Loader2,
   Lock,
   Pause,
@@ -26,14 +25,16 @@ import {
   X,
 } from "lucide-react";
 import VideoPanel, { type VideoPanelHandle } from "@/components/compare/VideoPanel";
-import TrimBar, { MAX_STEP, MIN_STEP } from "@/components/compare/TrimBar";
+import TrimBar, { LONG_STEP, MIN_STEP } from "@/components/compare/TrimBar";
 import DropZone from "@/components/compare/DropZone";
+import YouTubeCapture from "@/components/compare/YouTubeCapture";
 import Results from "@/components/compare/Results";
 import { Eyebrow, Headline, Rule } from "@/components/ui/editorial";
 import { ALL_PARTS_ON, ExtractError, type CompareResult, type ExtractProgress, type PartSwitches, type PoseTrack, type Tip } from "@/lib/compare/types";
 import { MODEL_DOWNLOAD_MB, extractPose, preloadModels, primeVideo } from "@/lib/compare/extract";
 import { suggestMovingPart } from "@/lib/compare/motionScan";
 import { runAnalysis, stopAnalysisWorker } from "@/lib/compare/runAnalysis";
+import { recordElement, resolveDuration } from "@/lib/compare/tabRecord";
 import {
   deleteSavedSteps,
   fingerprint,
@@ -56,11 +57,17 @@ import {
  * everything is released when the page is left or hidden for good.
  */
 
-const MAX_STUDENT_SEC = 180;
-
 type Busy = null | { who: "teacher" | "student" | "analysis" | "suggest"; p: ExtractProgress | null };
 
 const fmtEta = (s: number | null) => (s === null ? "" : s > 90 ? `about ${Math.round(s / 60)} min left` : `about ${Math.max(1, Math.round(s))} s left`);
+
+/** Running out of memory surfaces as a RangeError about an array; say what to do instead. */
+function friendly(err: unknown): string {
+  const m = err instanceof Error ? err.message : String(err);
+  if (/allocation failed|invalid (typed )?array length|out of memory|array buffer/i.test(m))
+    return "This device ran out of memory comparing such long videos. Mark a shorter part of the teacher's video, or use a shorter video of yourself.";
+  return m;
+}
 
 /** Student time -> teacher time along the smoothed map (straight-line beyond its ends). */
 function mapTime(map: CompareResult["map"], s: number): number {
@@ -192,12 +199,18 @@ export default function CompareClient() {
 
   const getTeacherVideo = useCallback(() => teacherRef.current?.video ?? null, []);
 
-  const onTeacherLoaded = (v: HTMLVideoElement) => {
+  const onTeacherLoaded = async (v: HTMLVideoElement) => {
+    // a recording (YouTube, or some phones) may not say how long it is until asked
+    const dur = await resolveDuration(v);
+    if (!Number.isFinite(dur) || dur <= 0) {
+      setError("This browser can't tell how long that video is. Try another video.");
+      return;
+    }
     setTVideo(v);
-    setTDur(v.duration);
+    setTDur(dur);
     setTAspect(v.videoWidth / v.videoHeight);
-    if (restored && restored.range[1] <= v.duration + 0.5) setRange(restored.range);
-    else setRange([0, Math.min(v.duration, 8)]);
+    if (restored && restored.range[1] <= dur + 0.5) setRange(restored.range);
+    else setRange([0, Math.min(dur, 8)]);
   };
 
   const suggest = async () => {
@@ -275,14 +288,14 @@ export default function CompareClient() {
       abortRef.current = ac;
       try {
         setBusy({ who: "student", p: null });
-        const dur = Number.isFinite(v.duration) ? v.duration : MAX_STUDENT_SEC;
-        if (dur > MAX_STUDENT_SEC) setNote(`Only the first ${MAX_STUDENT_SEC / 60} minutes of your video are used.`);
-        const s = await extractPose(v, [0, Math.min(dur, MAX_STUDENT_SEC)], { onProgress: onProgress("student"), signal: ac.signal });
+        const dur = await resolveDuration(v);
+        if (!Number.isFinite(dur) || dur <= 0) throw new Error("This browser can't tell how long your video is. Try another video.");
+        const s = await extractPose(v, [0, dur], { onProgress: onProgress("student"), signal: ac.signal });
         setSTrack(s);
         setBusy({ who: "analysis", p: null });
         setResult(await runAnalysis(tTrack, s, parts));
       } catch (err) {
-        if (!(err instanceof ExtractError && err.code === "aborted")) setError(err instanceof Error ? err.message : String(err));
+        if (!(err instanceof ExtractError && err.code === "aborted")) setError(friendly(err));
       } finally {
         setBusy(null);
       }
@@ -296,6 +309,8 @@ export default function CompareClient() {
     try {
       setResult(await runAnalysis(tTrack, sTrack, p));
       setActiveTip(null);
+    } catch (err) {
+      setError(friendly(err));
     } finally {
       setBusy(null);
     }
@@ -363,7 +378,7 @@ export default function CompareClient() {
   // ?debug=1 exposes the tracks and the result to tests (they never leave the tab)
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("debug") === "1")
-      (window as unknown as { __compare: unknown }).__compare = { teacher: tTrack, student: sTrack, result };
+      (window as unknown as { __compare: unknown }).__compare = { teacher: tTrack, student: sTrack, result, recordElement, resolveDuration };
   }, [tTrack, sTrack, result]);
 
   const ghostInfo = useMemo(
@@ -439,7 +454,7 @@ export default function CompareClient() {
         If you face the other way, it&apos;s compared mirrored by itself.
       </Hint>
       <Hint icon={<Timer size={16} />} title="Extra bits are fine">
-        Walking in, pauses, doing the step a few times, or a different speed. Up to {MAX_STUDENT_SEC / 60} minutes is used.
+        Walking in, pauses, doing the step a few times, or a different speed. Any length.
       </Hint>
     </ul>
   );
@@ -452,7 +467,7 @@ export default function CompareClient() {
           <Eyebrow tone="primary">Compare · beta</Eyebrow>
           <Headline as="h1">Compare with your teacher</Headline>
           <p className="serif max-w-[62ch] text-[1.02rem] leading-[1.66] text-foreground/65 sm:text-[1.09rem]">
-            Mark one step in your teacher&apos;s video, add a video of yourself doing it, and see the two side by side with a
+            Mark a step, or a whole dance, in your teacher&apos;s video, add a video of yourself doing it, and see the two side by side with a
             stick figure on each and <strong className="font-semibold text-foreground">up to three corrections</strong>.
           </p>
         </header>
@@ -461,8 +476,8 @@ export default function CompareClient() {
           <Fact icon={<ShieldCheck size={18} />} label="Private" value="Stays on this device">
             No video or frame is uploaded or kept.
           </Fact>
-          <Fact icon={<Scissors size={18} />} label="One step" value={`${MIN_STEP}–${MAX_STEP} s`}>
-            Your own video: up to {MAX_STUDENT_SEC / 60} minutes.
+          <Fact icon={<Scissors size={18} />} label="You choose the length" value="A step or a whole dance">
+            Long parts take longer to prepare.
           </Fact>
           <Fact icon={<Download size={18} />} label="First time" value={`${MODEL_DOWNLOAD_MB} MB`}>
             The pose model downloads once.
@@ -506,7 +521,7 @@ export default function CompareClient() {
             id="step1"
             title="Your teacher's video"
             state={stage === 1 ? "current" : "done"}
-            desc={tUrl ? undefined : "Choose a video of your teacher. Then mark the one step you want to practise."}
+            desc={tUrl ? undefined : "Choose a video of your teacher, or use a YouTube link. Then mark the part you want to practise."}
             status={tTrack ? <Chip tone="ready">Step ready</Chip> : undefined}
           >
             {stage === 1 && alerts}
@@ -528,17 +543,17 @@ export default function CompareClient() {
                   testId="teacher-file"
                 />
                 <ul className="space-y-5 self-center">
-                  <Hint icon={<Scissors size={16} />} title={`Mark one step of ${MIN_STEP}–${MAX_STEP} s`}>
-                    The video can be long, with talking and many steps. Only the part you mark is processed.
+                  <Hint icon={<Scissors size={16} />} title="Mark the part to compare">
+                    One step or the whole dance, from {MIN_STEP} s. The video can be long, with talking and many steps; only
+                    the part you mark is processed. A part over {LONG_STEP / 60} minute takes longer.
                   </Hint>
                   <Hint icon={<Wand2 size={16} />} title="Not sure where it starts?">
                     Pause near the step and tap &ldquo;Find the moving part&rdquo;.
                   </Hint>
-                  <Hint icon={<Link2 size={16} />} title="Only have a YouTube link?">
-                    YouTube doesn&apos;t let other sites read its videos or draw on its player, so a link can&apos;t be compared. If
-                    it&apos;s your teacher&apos;s own video, they can download it from YouTube Studio, and you can choose that file here.
-                  </Hint>
                 </ul>
+                <div className="border-t border-foreground/10 pt-6 lg:col-span-2">
+                  <YouTubeCapture who="teacher" onFile={chooseTeacher} />
+                </div>
               </div>
             ) : (
               <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-10">
@@ -592,7 +607,7 @@ export default function CompareClient() {
                         type="button"
                         className={solid}
                         onClick={prepareTeacher}
-                        disabled={!!busy || stepLen < MIN_STEP || stepLen > MAX_STEP + 1e-6}
+                        disabled={!!busy || stepLen < MIN_STEP}
                         data-testid="prepare-teacher"
                       >
                         <Sparkles size={14} /> Prepare this step
@@ -648,11 +663,20 @@ export default function CompareClient() {
                   )}
                 </div>
                 <div className="self-center">{recordingTips}</div>
+                {tTrack && (
+                  <div className="border-t border-foreground/10 pt-6 lg:col-span-2">
+                    <YouTubeCapture who="student" onFile={chooseStudent} />
+                  </div>
+                )}
               </div>
             ) : !result ? (
               <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-10">
                 <div className="min-w-0 space-y-3">
-                  <VideoPanel ref={studentRef} src={sUrl} track={sTrack} label="You" aspect={sAspect} onLoaded={(v) => setSAspect(v.videoWidth / v.videoHeight)} />
+                  <VideoPanel ref={studentRef} src={sUrl} track={sTrack} label="You" aspect={sAspect} onLoaded={(v) => {
+                      setSAspect(v.videoWidth / v.videoHeight);
+                      void resolveDuration(v);
+                    }}
+                  />
                   <FileRow name={sName} label="Change video" onFile={chooseStudent} onReject={notAVideo} testId="student-file" disabled={!!busy} />
                 </div>
                 <div className="space-y-6">
