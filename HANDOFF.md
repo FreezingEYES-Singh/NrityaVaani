@@ -1,6 +1,12 @@
 # Handoff: session notes for the next Claude session
 
-**Branch:** `claude/nifty-mendel-34y2is`. It contains `claude/relaxed-fermat-ctr4u2` (design revision 5) and `claude/blissful-lovelace-305wig`. On 2026-10-08 the user asked for it to go live, so it was merged into `main` through a pull request; Netlify deploys `main` to https://nrityavaani-ai.netlify.app.
+**Branch:** `claude/nifty-mendel-34y2is`. It contains `claude/relaxed-fermat-ctr4u2` (design revision 5) and `claude/blissful-lovelace-305wig`.
+
+**Deployment (read this first):**
+- The owner's main website is **https://nrityavaaniai.netlify.app** (Netlify project "nrityavaaniai", team "medvault"). **Don't touch it** (the owner's words).
+- The `nrityavaani-ai.netlify.app` in the README is not the owner's site.
+- On 2026-10-08 this branch was merged into `main` (#1) and then reverted (#2), so `main` is exactly as it was on 2026-09-20.
+- The Compare feature lives only on this branch. To show it, deploy this branch as a **separate** Netlify project. Only merge it into `main` when the owner asks for it on the main site.
 **Last updated:** 2026-10-08
 
 Read this file first. §0 is the latest state: **Phase 1 of the video-compare feature is built.** §1–4 are the earlier sessions' notes.
