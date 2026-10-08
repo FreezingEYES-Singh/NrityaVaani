@@ -26,6 +26,7 @@ export default function SiteBackdrop() {
     pathname.startsWith("/learn/") ||
     pathname.startsWith("/practice") ||
     pathname.startsWith("/live") ||
+    pathname.startsWith("/compare") ||
     pathname === "/lesson"
   ) {
     return null;
