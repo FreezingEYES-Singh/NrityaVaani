@@ -11,6 +11,14 @@ Read this file first. §0 is the latest state: **Phase 1 of the video-compare fe
 
 ---
 
+## 0c. Session 4, part 3 (2026-10-08): `/compare` as a professional workspace (no numbered steps)
+
+The owner asked for a professional, business-website feel instead of "Step 1/2/3". `CompareClient.tsx` is now one workspace:
+- a header with three feature highlights (private by design; body, hands and mudras; a segment or a full class);
+- **Reference** (teacher: file or YouTube recording, the segment timeline, "Auto-detect movement", optional "Analyse reference") and **Your performance** (file, phone recording, "Performance contains: One segment / Full class") as two panels side by side, each with a status pill;
+- a sticky action bar with both statuses and one **Run analysis** (`runAll()`: analyses the reference if needed, then the performance, then compares). The test ids `teacher-file`, `student-file`, `prepare-teacher`, `teacher-ready` (status pill), `analyse-student` (Run analysis), `results`, `play-both`, `mode-one`, `mode-class` are kept, so `docs/video-compare/e2e-assets/run-compare-e2e.mjs` still works;
+- after analysis the inputs fold into a summary bar ("Edit inputs") and the **Analysis report** opens: headline, mode switch, segment navigator (class mode, "Segment N"), synced players, Assessment (bands) and Corrections, coverage lists.
+
 ## 0b. Session 4, part 2 (2026-10-08): hands, class mode, YouTube for the teacher only
 
 The owner asked: YouTube only for the teacher's video (the student uploads); why only the body and not the hands; and what happens with a 10-minute YouTube class and a 1-minute student dance of all its steps.

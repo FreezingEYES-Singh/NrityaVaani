@@ -49,7 +49,7 @@ export default function Results({ result: r, parts, onParts, onShowMe, activeTip
       <div className="grid gap-10 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:gap-12">
         {r.found ? (
           <div className="space-y-4">
-            <p className={label}>What to correct</p>
+            <p className={label}>Corrections</p>
             {r.tips.length > 0 ? (
               <ol className="space-y-3">
                 {r.tips.map((t, i) => (
@@ -104,7 +104,7 @@ export default function Results({ result: r, parts, onParts, onShowMe, activeTip
         <div className="space-y-6">
           {r.found && (
             <div className="space-y-3">
-              <p className={label}>By body part</p>
+              <p className={label}>Assessment</p>
               <div className="grid grid-cols-2 gap-2">
                 {(["arms", "legs", "torso", "hands", "timing"] as const).map((k) => {
                   const b = r.bands[k];

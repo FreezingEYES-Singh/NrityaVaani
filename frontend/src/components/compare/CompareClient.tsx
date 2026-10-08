@@ -5,16 +5,16 @@ import {
   AlertTriangle,
   Camera,
   Check,
-  Download,
+  Hand,
   Info,
+  Layers,
   Loader2,
-  Lock,
   Pause,
+  Pencil,
   Play,
   RotateCcw,
   Save,
   ScanLine,
-  Scissors,
   ShieldCheck,
   Sparkles,
   Timer,
@@ -25,12 +25,12 @@ import {
   X,
 } from "lucide-react";
 import VideoPanel, { type VideoPanelHandle } from "@/components/compare/VideoPanel";
-import TrimBar, { LONG_STEP, MIN_STEP } from "@/components/compare/TrimBar";
+import TrimBar, { MIN_STEP } from "@/components/compare/TrimBar";
 import DropZone from "@/components/compare/DropZone";
 import YouTubeCapture from "@/components/compare/YouTubeCapture";
 import Results from "@/components/compare/Results";
 import { LessonGaps, LessonNav } from "@/components/compare/LessonSteps";
-import { Eyebrow, Headline, Rule } from "@/components/ui/editorial";
+import { Eyebrow, Headline } from "@/components/ui/editorial";
 import {
   ALL_PARTS_ON,
   ExtractError,
@@ -58,11 +58,16 @@ import {
 } from "@/lib/compare/store";
 
 /**
- * /compare: "Compare with teacher" (docs/video-compare/05-mvp.md, Phase 1).
- *
- * 1. The teacher's video: mark one step, find the body in every frame on this device.
- * 2. Your video: choose one, or record with the phone's own camera.
- * 3. The result: both videos side by side, up to three corrections, Show me.
+ * /compare: "Compare with your teacher" (docs/video-compare/05-mvp.md, Phase 1),
+ * laid out as one workspace rather than numbered steps:
+ * - Reference (the teacher's video, a file or a YouTube recording) and Your
+ *   performance side by side; the reference segment is marked on its timeline;
+ * - one "Run analysis" does whatever is missing: finds the body and hands in the
+ *   reference segment, then in the performance, then compares (one segment, or
+ *   every segment of a class);
+ * - the inputs then fold into a summary and the analysis report opens: segments
+ *   (class mode), both videos synced, the assessment by body part, corrections
+ *   with Show me.
  *
  * Videos are only ever object URLs in this tab. Nothing is uploaded, and
  * everything is released when the page is left or hidden for good.
@@ -142,6 +147,8 @@ export default function CompareClient() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [isPhone, setIsPhone] = useState(false);
+  // the inputs are folded into a summary while the report is open, unless being edited
+  const [editing, setEditing] = useState(false);
 
   const teacherRef = useRef<VideoPanelHandle>(null);
   const studentRef = useRef<VideoPanelHandle>(null);
@@ -150,6 +157,8 @@ export default function CompareClient() {
   const urlsRef = useRef<string[]>([]);
   const syncRef = useRef<number | null>(null);
   const videosRef = useRef<HTMLDivElement>(null);
+  const reportRef = useRef<HTMLDivElement>(null);
+  const scrollToReport = useRef(false);
 
   const track = (u: string) => {
     urlsRef.current.push(u);
@@ -171,6 +180,7 @@ export default function CompareClient() {
     setResult(null);
     setLesson(null);
     setModeChoice(null);
+    setEditing(false);
     setActiveTip(null);
     setBusy(null);
     setError(null);
@@ -256,6 +266,30 @@ export default function CompareClient() {
     }
   };
 
+  /** The reference segment's track: reused when this version saved it on this device, else found now. */
+  const ensureTeacher = async (v: HTMLVideoElement, ac: AbortController): Promise<PoseTrack> => {
+    if (tTrack) return tTrack;
+    if (!tFile) throw new Error("Add the reference video first.");
+    const key = await fingerprint(tFile, range, v);
+    let t: PoseTrack | null = null;
+    // a segment saved before hands were tracked is analysed again, so it has the fingers
+    if (restored && key === sessionStepKey() && isCurrent(restored)) t = restored;
+    if (!t) t = await loadTeacherStep(key).then((x) => (x && isCurrent(x) ? x : null)).catch(() => null);
+    if (t) setNote("This reference segment was already analysed on this device, so it wasn't processed again.");
+    if (!t) {
+      setBusy({ who: "teacher", p: null });
+      t = await extractPose(v, range, { onProgress: onProgress("teacher"), signal: ac.signal });
+    }
+    // kept for this session before any camera opens
+    await saveTeacherStep(key, t, { name: tFile.name, session: true }).catch(() => undefined);
+    rememberSessionStep(key);
+    setTKey(key);
+    setTTrack(t);
+    v.currentTime = range[0];
+    return t;
+  };
+
+  /** "Analyse reference": the reference alone, ahead of the performance. */
   const prepareTeacher = () => {
     const v = teacherRef.current?.video;
     if (!v || !tFile) return;
@@ -266,24 +300,9 @@ export default function CompareClient() {
       const ac = new AbortController();
       abortRef.current = ac;
       try {
-        const key = await fingerprint(tFile, range, v);
-        let t: PoseTrack | null = null;
-        // a step saved before hands were tracked is prepared again, so it has the fingers
-        if (restored && key === sessionStepKey() && isCurrent(restored)) t = restored;
-        if (!t) t = await loadTeacherStep(key).then((x) => (x && isCurrent(x) ? x : null)).catch(() => null);
-        if (t) setNote("This step was already prepared on this device, so it wasn't processed again.");
-        if (!t) {
-          setBusy({ who: "teacher", p: null });
-          t = await extractPose(v, range, { onProgress: onProgress("teacher"), signal: ac.signal });
-        }
-        // kept for this session before any camera opens
-        await saveTeacherStep(key, t, { name: tFile.name, session: true }).catch(() => undefined);
-        rememberSessionStep(key);
-        setTKey(key);
-        setTTrack(t);
-        v.currentTime = range[0];
+        await ensureTeacher(v, ac);
       } catch (err) {
-        if (!(err instanceof ExtractError && err.code === "aborted")) setError(err instanceof Error ? err.message : String(err));
+        if (!(err instanceof ExtractError && err.code === "aborted")) setError(friendly(err));
       } finally {
         setBusy(null);
       }
@@ -310,22 +329,32 @@ export default function CompareClient() {
     setLesson(null);
   };
 
-  const analyseStudent = () => {
-    const v = studentRef.current?.video;
-    if (!v || !tTrack) return;
-    primeVideo(v); // its own tap: iPhones may refuse play() otherwise
+  /** "Run analysis": the reference (if needed), the performance (if needed), then the comparison. */
+  const runAll = () => {
+    const tv = teacherRef.current?.video;
+    const sv = studentRef.current?.video;
+    if (!tv || !sv || !tFile) return;
+    // inside the tap, before any await: iPhones may refuse play() otherwise
+    if (!tTrack) primeVideo(tv);
+    if (!sTrack) primeVideo(sv);
     void (async () => {
       setError(null);
       const ac = new AbortController();
       abortRef.current = ac;
       try {
-        setBusy({ who: "student", p: null });
-        const dur = await resolveDuration(v);
-        if (!Number.isFinite(dur) || dur <= 0) throw new Error("This browser can't tell how long your video is. Try another video.");
-        const s = await extractPose(v, [0, dur], { onProgress: onProgress("student"), signal: ac.signal });
-        setSTrack(s);
+        const t = await ensureTeacher(tv, ac);
+        let st = sTrack;
+        if (!st) {
+          setBusy({ who: "student", p: null });
+          const dur = await resolveDuration(sv);
+          if (!Number.isFinite(dur) || dur <= 0) throw new Error("This browser can't tell how long your video is. Try another video.");
+          st = await extractPose(sv, [0, dur], { onProgress: onProgress("student"), signal: ac.signal });
+          setSTrack(st);
+        }
         setBusy({ who: "analysis", p: null });
-        await compareTracks(tTrack, s, parts, mode);
+        scrollToReport.current = true;
+        await compareTracks(t, st, parts, mode);
+        setEditing(false);
       } catch (err) {
         if (!(err instanceof ExtractError && err.code === "aborted")) setError(friendly(err));
       } finally {
@@ -334,12 +363,12 @@ export default function CompareClient() {
     })();
   };
 
-  /** One step, or class mode; in class mode the first step is shown. */
+  /** One segment, or class mode; in class mode the first segment is shown. */
   const compareTracks = async (t: PoseTrack, st: PoseTrack, p: PartSwitches, m: "one" | "class") => {
     if (m === "class") {
       setBusy({
         who: "analysis",
-        p: { stage: "processing", fraction: 0.05, etaSec: null, message: "Finding each step of your dance in the class video (a long class takes a minute)" },
+        p: { stage: "processing", fraction: 0.05, etaSec: null, message: "Finding each segment of your performance in the class (a long class takes a minute)" },
       });
       const L = await runLesson(t, st, p);
       setLesson(L);
@@ -469,6 +498,14 @@ export default function CompareClient() {
       (window as unknown as { __compare: unknown }).__compare = { teacher: tTrack, student: sTrack, result, lesson, recordElement, resolveDuration };
   }, [tTrack, sTrack, result, lesson]);
 
+  // a new report scrolls into view
+  useEffect(() => {
+    if (result && scrollToReport.current) {
+      scrollToReport.current = false;
+      reportRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [result]);
+
   const ghostInfo = useMemo(
     () => (ghost && tTrack && result?.found ? { track: tTrack, timeAt: (s: number) => mapTime(result.map, s), mirrored: result.mirrored } : null),
     [ghost, tTrack, result],
@@ -476,28 +513,28 @@ export default function CompareClient() {
 
   const busyLine = (who: NonNullable<Busy>["who"]) =>
     busy?.who === who ? (
-      <div className="space-y-2.5 rounded-sm border border-foreground/12 bg-foreground/[0.02] p-4" role="status">
+      <div className="space-y-2.5 rounded-md border border-foreground/12 bg-background/40 p-4" role="status">
         <div className="flex items-center justify-between gap-3">
-          <p className="mono flex min-w-0 items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-foreground/65">
-            <Loader2 size={12} className="shrink-0 animate-spin text-primary" />
+          <p className="flex min-w-0 items-center gap-2 text-[0.85rem] text-foreground/75">
+            <Loader2 size={14} className="shrink-0 animate-spin text-primary" />
             <span className="truncate">
-              {busy.p?.message ?? (who === "analysis" ? "Comparing" : who === "suggest" ? "Looking for the moving part" : "Starting")}
+              {busy.p?.message ?? (who === "analysis" ? "Comparing" : who === "suggest" ? "Looking for the movement" : "Starting")}
             </span>
           </p>
           {(who === "teacher" || who === "student") && (
             <button
               type="button"
-              className="mono shrink-0 text-[10px] uppercase tracking-[0.14em] text-foreground/45 underline-offset-4 hover:text-primary hover:underline"
+              className="mono shrink-0 text-[10px] uppercase tracking-[0.14em] text-foreground/50 underline-offset-4 hover:text-primary hover:underline"
               onClick={() => abortRef.current?.abort()}
             >
-              Stop
+              Cancel
             </button>
           )}
         </div>
         <div className="h-1 w-full overflow-hidden rounded-full bg-foreground/10">
           <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${Math.round((busy.p?.fraction ?? 0.02) * 100)}%` }} />
         </div>
-        {busy.p?.etaSec !== undefined && <p className="mono text-[10px] text-foreground/45">{fmtEta(busy.p?.etaSec ?? null)}</p>}
+        {busy.p?.etaSec !== undefined && busy.p?.etaSec !== null && <p className="mono text-[10px] text-foreground/45">{fmtEta(busy.p.etaSec)}</p>}
       </div>
     ) : null;
 
@@ -506,15 +543,22 @@ export default function CompareClient() {
   const solid = `${pill} bg-primary font-medium text-white hover:bg-primary/85 dark:text-black`;
   const ghostBtn = `${pill} border border-foreground/20 text-foreground/70 hover:border-primary/60 hover:text-primary`;
   const stepLen = range[1] - range[0];
-  const stage: 1 | 2 | 3 = result ? 3 : tTrack ? 2 : 1;
   const mode: "one" | "class" = modeChoice ?? (stepLen >= CLASS_MODE_FROM ? "class" : "one");
   const notAVideo = () => setError("That file isn't a video. Choose an MP4, MOV or WebM file.");
+  const pct = (p: ExtractProgress | null | undefined) => `${Math.round((p?.fraction ?? 0) * 100)}%`;
+  const showReport = !!(result && tUrl && sUrl && !editing);
+  const canRun = !!(tUrl && sUrl && tDur > 0 && stepLen >= MIN_STEP && !busy);
+
+  const refState: Readiness =
+    busy?.who === "teacher" ? { tone: "busy", text: `Analysing ${pct(busy.p)}` } : tTrack ? { tone: "ready", text: "Analysed" } : tUrl ? { tone: "idle", text: "Loaded" } : { tone: "empty", text: "Not added" };
+  const perfState: Readiness =
+    busy?.who === "student" ? { tone: "busy", text: `Analysing ${pct(busy.p)}` } : sTrack ? { tone: "ready", text: "Analysed" } : sUrl ? { tone: "idle", text: "Loaded" } : { tone: "empty", text: "Not added" };
 
   const alerts =
     error || note ? (
-      <div className="mb-6 space-y-3">
+      <div className="mt-8 space-y-3">
         {error && (
-          <div role="alert" className="flex items-start gap-3 rounded-sm border border-rose-500/40 bg-rose-500/[0.06] px-4 py-3 text-[0.95rem] text-foreground/85">
+          <div role="alert" className="flex items-start gap-3 rounded-md border border-rose-500/40 bg-rose-500/[0.06] px-4 py-3 text-[0.95rem] text-foreground/85">
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-rose-400" />
             <p className="flex-1">{error}</p>
             <button type="button" aria-label="Dismiss" className="text-foreground/45 hover:text-foreground" onClick={() => setError(null)}>
@@ -523,9 +567,9 @@ export default function CompareClient() {
           </div>
         )}
         {note && (
-          <div className="flex items-start gap-3 rounded-sm border border-foreground/12 bg-foreground/[0.02] px-4 py-3 text-[0.95rem] text-foreground/75">
+          <div className="flex items-start gap-3 rounded-md border border-foreground/12 bg-foreground/[0.02] px-4 py-3 text-[0.95rem] text-foreground/75">
             <Info size={16} className="mt-0.5 shrink-0 text-primary" />
-            <p className="serif flex-1">{note}</p>
+            <p className="flex-1">{note}</p>
             <button type="button" aria-label="Dismiss" className="text-foreground/45 hover:text-foreground" onClick={() => setNote(null)}>
               <X size={14} />
             </button>
@@ -534,365 +578,361 @@ export default function CompareClient() {
       </div>
     ) : null;
 
-  const recordingTips = (
-    <ul className="space-y-5">
-      <Hint icon={<ScanLine size={16} />} title="Your whole body in view">
-        Head to feet, in every frame, with good light.
-      </Hint>
-      <Hint icon={<UserRound size={16} />} title="Face the camera like your teacher">
-        If you face the other way, it&apos;s compared mirrored by itself.
-      </Hint>
-      <Hint icon={<Timer size={16} />} title="Extra bits are fine">
-        Walking in, pauses, doing the step a few times, or a different speed. Any length.
-      </Hint>
+  const guidelines = (
+    <ul className="grid gap-3 sm:grid-cols-3">
+      <Guideline icon={<ScanLine size={15} />} title="Whole body in view">
+        Head to feet, good light.
+      </Guideline>
+      <Guideline icon={<UserRound size={15} />} title="Face the camera">
+        Like your teacher; mirroring is handled.
+      </Guideline>
+      <Guideline icon={<Timer size={15} />} title="Any length">
+        Pauses and repeats are fine.
+      </Guideline>
     </ul>
   );
 
+  const modeSwitch = (
+    <Segmented
+      label="Performance contains"
+      value={mode}
+      onChange={changeMode}
+      disabled={!!busy}
+      options={[
+        { value: "one", label: "One segment", testId: "mode-one" },
+        { value: "class", label: "Full class", testId: "mode-class" },
+      ]}
+    />
+  );
+
+  const fmtClock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  const headline = !result
+    ? ""
+    : !result.found
+      ? "No matching movement found"
+      : result.tips.length
+        ? `${result.tips.length} correction${result.tips.length > 1 ? "s" : ""} to work on`
+        : "Close to the reference";
+
   return (
     <div className="min-h-screen px-4 pt-28 pb-24 sm:px-6 sm:pt-32">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-7xl">
         {/* ---------------- header ---------------- */}
-        <header className="space-y-4">
-          <Eyebrow tone="primary">Compare · beta</Eyebrow>
-          <Headline as="h1">Compare with your teacher</Headline>
-          <p className="serif max-w-[62ch] text-[1.02rem] leading-[1.66] text-foreground/65 sm:text-[1.09rem]">
-            Mark a step, or a whole class, in your teacher&apos;s video, add a video of yourself dancing it, and see the two side by side
-            with the body, hands and fingers traced on each, and <strong className="font-semibold text-foreground">corrections</strong> for
-            each step.
-          </p>
+        <header className="grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-end lg:gap-14">
+          <div className="space-y-5">
+            <Eyebrow tone="primary">NrityaVaani Compare · Beta</Eyebrow>
+            <Headline as="h1">Compare with your teacher</Headline>
+            <p className="serif max-w-[60ch] text-[1.02rem] leading-[1.66] text-foreground/65 sm:text-[1.09rem]">
+              Add your teacher&apos;s video and a video of yourself. The matching movement is found in both, the body, hands and
+              fingers are traced, and you get clear corrections for each segment you danced.
+            </p>
+          </div>
+          <ul className="grid gap-4 rounded-md border border-foreground/12 bg-foreground/[0.02] p-5 sm:grid-cols-3 lg:grid-cols-1">
+            <Feature icon={<ShieldCheck size={16} />} title="Private by design">
+              Processed on this device. Videos are never uploaded.
+            </Feature>
+            <Feature icon={<Hand size={16} />} title="Body, hands and mudras">
+              Posture, timing, fingers and mudra shapes.
+            </Feature>
+            <Feature icon={<Layers size={16} />} title="A segment or a full class">
+              Every segment of a class, found and checked.
+            </Feature>
+          </ul>
         </header>
 
-        <div className="mt-10 grid gap-5 rounded-sm border border-foreground/12 bg-foreground/[0.02] p-5 sm:grid-cols-3">
-          <Fact icon={<ShieldCheck size={18} />} label="Private" value="Stays on this device">
-            No video or frame is uploaded or kept.
-          </Fact>
-          <Fact icon={<Scissors size={18} />} label="You choose the length" value="A step or a whole dance">
-            Long parts take longer to prepare.
-          </Fact>
-          <Fact icon={<Download size={18} />} label="First time" value={`${MODEL_DOWNLOAD_MB} MB`}>
-            The pose model downloads once.
-          </Fact>
-        </div>
+        {alerts}
 
-        {/* ---------------- progress ---------------- */}
-        <ol className="mt-12 flex items-center gap-2 sm:gap-4" aria-label="Progress">
-          {(["Teacher's step", "Your video", "Your tips"] as const).map((name, i) => {
-            const n = i + 1;
-            const done = n < stage;
-            const current = n === stage;
-            return (
-              <li key={name} className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3" aria-current={current ? "step" : undefined}>
-                <span
-                  className={`mono grid h-7 w-7 shrink-0 place-items-center rounded-full border text-[11px] ${
-                    done
-                      ? "border-primary bg-primary text-white dark:text-black"
-                      : current
-                        ? "border-primary text-primary"
-                        : "border-foreground/20 text-foreground/40"
-                  }`}
-                >
-                  {done ? <Check size={13} strokeWidth={3} /> : n}
-                </span>
-                <span
-                  className={`mono truncate text-[10px] uppercase tracking-[0.16em] ${current ? "text-foreground" : "hidden text-foreground/45 sm:inline"}`}
-                >
-                  {name}
-                </span>
-                {n < 3 && <span className={`hidden h-px flex-1 sm:block ${done ? "bg-primary/50" : "bg-foreground/12"}`} />}
-              </li>
-            );
-          })}
-        </ol>
-
-        <div className="mt-6 space-y-6">
-          {/* ---------------- 1 ---------------- */}
-          <StepPanel
-            n={1}
-            id="step1"
-            title="Your teacher's video"
-            state={stage === 1 ? "current" : "done"}
-            desc={tUrl ? undefined : "Choose a video of your teacher, or use a YouTube link. Then mark the part you want to practise."}
-            status={tTrack ? <Chip tone="ready">Step ready</Chip> : undefined}
-          >
-            {stage === 1 && alerts}
-            {restored && !tTrack && (
-              <p className="mb-6 flex items-start gap-3 rounded-sm border border-foreground/12 bg-foreground/[0.02] px-4 py-3 text-[0.95rem] text-foreground/75">
-                <Info size={16} className="mt-0.5 shrink-0 text-primary" />
-                <span className="serif">A teacher step from this session was kept. Choose the same teacher video again to continue without processing it again.</span>
-              </p>
-            )}
-            {!tUrl ? (
-              <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
-                <DropZone
-                  className="min-h-[260px]"
-                  icon={<Upload size={20} />}
-                  title="Choose or drop the teacher's video"
-                  hint="MP4, MOV or WebM · any length"
-                  onFile={chooseTeacher}
-                  onReject={notAVideo}
-                  testId="teacher-file"
-                />
-                <ul className="space-y-5 self-center">
-                  <Hint icon={<Scissors size={16} />} title="Mark the part to compare">
-                    One step, or the whole class: from {MIN_STEP} s to the whole video. For a long class, mark it all and choose
-                    &ldquo;Several steps from the class&rdquo; in step 2: each step of your dance is found in it. A part over{" "}
-                    {LONG_STEP / 60} minute takes longer to prepare.
-                  </Hint>
-                  <Hint icon={<Wand2 size={16} />} title="Not sure where it starts?">
-                    Pause near the step and tap &ldquo;Find the moving part&rdquo;.
-                  </Hint>
-                </ul>
-                <div className="border-t border-foreground/10 pt-6 lg:col-span-2">
-                  <YouTubeCapture onFile={chooseTeacher} />
-                </div>
-              </div>
-            ) : (
-              <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-10">
-                <div className="min-w-0 space-y-3">
-                  <VideoPanel
-                    ref={teacherRef}
-                    src={tUrl}
-                    track={tTrack}
-                    label={tTrack ? "Teacher · stick figure found on this device" : "Teacher"}
-                    aspect={tAspect}
-                    onLoaded={onTeacherLoaded}
-                  />
-                  <FileRow name={tFile?.name ?? ""} label="Change video" onFile={chooseTeacher} onReject={notAVideo} testId="teacher-file" disabled={!!busy} />
-                </div>
-                <div className="space-y-5">
-                  {tDur > 0 && (
-                    <TrimBar
-                      key={tUrl}
-                      video={tVideo}
-                      getVideo={getTeacherVideo}
-                      duration={tDur}
-                      range={range}
-                      onChange={(r) => {
-                        setRange(r);
-                        if (tTrack) {
-                          setTTrack(null);
-                          setResult(null);
-                          setLesson(null);
-    setLesson(null);
-                        }
-                      }}
-                      disabled={!!busy}
-                    />
-                  )}
-                  {tTrack ? (
-                    <div className="space-y-3">
-                      <p
-                        className="mono flex items-center gap-2 rounded-sm border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-3 text-[10px] uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-400"
-                        data-testid="teacher-ready"
-                      >
-                        <Check size={14} /> Teacher step ready · {tTrack.frames.filter((f) => f.img).length} frames with the dancer
-                      </p>
-                      <button type="button" className={`${ghostBtn} w-full`} onClick={saveStep} disabled={saved}>
-                        <Save size={14} /> {saved ? "Saved on this device" : "Save this step for next time"}
-                      </button>
-                    </div>
+        {/* ---------------- workspace ---------------- */}
+        {showReport ? (
+          <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-md border border-foreground/12 bg-foreground/[0.02] px-5 py-4">
+            <Summary label="Reference" value={tFile?.name ?? ""} meta={`${fmtClock(range[0])}–${fmtClock(range[1])}`} />
+            <Summary label="Performance" value={sName} meta={sTrack ? fmtClock(sTrack.range[1]) : ""} />
+            <Summary label="Mode" value={mode === "class" ? "Full class" : "One segment"} />
+            <span className="flex-1" />
+            <button type="button" className={ghostBtn} onClick={() => setEditing(true)}>
+              <Pencil size={13} /> Edit inputs
+            </button>
+          </div>
+        ) : (
+          <>
+            <section aria-label="Videos" className="mt-10 grid gap-5 lg:grid-cols-2">
+              {/* reference */}
+              <Panel
+                kicker="Reference"
+                title="Teacher's video"
+                status={
+                  tTrack ? (
+                    <Status tone="ready" testId="teacher-ready">
+                      Analysed · {tTrack.frames.filter((f) => f.img).length} frames
+                    </Status>
                   ) : (
-                    <div className="grid gap-2">
-                      <button type="button" className={ghostBtn} onClick={suggest} disabled={!!busy || !tDur}>
-                        <Wand2 size={14} /> Find the moving part
-                      </button>
-                      <button
-                        type="button"
-                        className={solid}
-                        onClick={prepareTeacher}
-                        disabled={!!busy || stepLen < MIN_STEP}
-                        data-testid="prepare-teacher"
-                      >
-                        <Sparkles size={14} /> Prepare this step
-                      </button>
+                    <Status tone={refState.tone}>{refState.text}</Status>
+                  )
+                }
+              >
+                {restored && !tTrack && (
+                  <p className="flex items-start gap-2 rounded-md border border-foreground/12 bg-background/40 px-3 py-2.5 text-[0.88rem] text-foreground/70">
+                    <Info size={15} className="mt-0.5 shrink-0 text-primary" />A reference segment from this session was kept. Add the same video
+                    again to reuse it.
+                  </p>
+                )}
+                {!tUrl ? (
+                  <>
+                    <DropZone
+                      className="min-h-[220px]"
+                      icon={<Upload size={20} />}
+                      title="Add the teacher's video"
+                      hint="Drop a file or browse · MP4, MOV or WebM · any length"
+                      onFile={chooseTeacher}
+                      onReject={notAVideo}
+                      testId="teacher-file"
+                    />
+                    <YouTubeCapture onFile={chooseTeacher} />
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <VideoPanel
+                        ref={teacherRef}
+                        src={tUrl}
+                        track={tTrack}
+                        label={tTrack ? "Reference · traced on this device" : "Reference"}
+                        aspect={tAspect}
+                        onLoaded={onTeacherLoaded}
+                      />
+                      <FileRow name={tFile?.name ?? ""} label="Replace" onFile={chooseTeacher} onReject={notAVideo} testId="teacher-file" disabled={!!busy} />
                     </div>
-                  )}
-                  {busyLine("suggest")}
-                  {busyLine("teacher")}
-                </div>
-              </div>
-            )}
-          </StepPanel>
+                    {tDur > 0 && (
+                      <TrimBar
+                        key={tUrl}
+                        video={tVideo}
+                        getVideo={getTeacherVideo}
+                        duration={tDur}
+                        range={range}
+                        onChange={(r) => {
+                          setRange(r);
+                          if (tTrack) {
+                            setTTrack(null);
+                            setResult(null);
+                            setLesson(null);
+                          }
+                        }}
+                        disabled={!!busy}
+                      />
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className={ghostBtn} onClick={suggest} disabled={!!busy || !tDur}>
+                        <Wand2 size={14} /> Auto-detect movement
+                      </button>
+                      {tTrack ? (
+                        <button type="button" className={ghostBtn} onClick={saveStep} disabled={saved}>
+                          <Save size={14} /> {saved ? "Saved on this device" : "Save reference"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className={ghostBtn}
+                          onClick={prepareTeacher}
+                          disabled={!!busy || stepLen < MIN_STEP}
+                          data-testid="prepare-teacher"
+                        >
+                          <Sparkles size={14} /> Analyse reference
+                        </button>
+                      )}
+                    </div>
+                    {busyLine("suggest")}
+                    {busyLine("teacher")}
+                  </>
+                )}
+              </Panel>
 
-          {/* ---------------- 2 ---------------- */}
-          <StepPanel
-            n={2}
-            id="step2"
-            title="Your video"
-            state={stage === 2 ? "current" : stage > 2 ? "done" : "locked"}
-            desc={stage < 2 ? "Unlocks when the teacher's step is ready." : sUrl ? undefined : "Choose a video of yourself doing the same step, or record one."}
-            status={stage < 2 ? <Chip tone="locked">Locked</Chip> : result ? <Chip tone="ready">Compared</Chip> : undefined}
-          >
-            {stage === 2 && alerts}
-            {tTrack && (
-              <fieldset className="mb-6 space-y-2.5">
-                <legend className="mono mb-2.5 text-[10px] uppercase tracking-[0.18em] text-foreground/55">What&apos;s in your video?</legend>
-                <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
-                  <ModeOption
-                    active={mode === "one"}
-                    title="The part I marked"
-                    onClick={() => changeMode("one")}
-                    disabled={!!busy}
-                    testId="mode-one"
-                  >
-                    The same step or dance as the teacher&apos;s marked part, once or a few times.
-                  </ModeOption>
-                  <ModeOption
-                    active={mode === "class"}
-                    title="Several steps from the class"
-                    onClick={() => changeMode("class")}
-                    disabled={!!busy}
-                    testId="mode-class"
-                  >
-                    Your dance has steps taught across the teacher&apos;s video. Each one is found in it and checked.
-                  </ModeOption>
-                </div>
-              </fieldset>
-            )}
-            {!sUrl ? (
-              <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
-                <div className="space-y-3">
-                  <DropZone
-                    className="min-h-[220px]"
-                    icon={tTrack ? <Upload size={20} /> : <Lock size={18} />}
-                    title={tTrack ? "Choose or drop your video" : "Prepare the teacher's step first"}
-                    hint="From your gallery, Google Drive or Files · MP4, MOV or WebM"
-                    onFile={chooseStudent}
-                    onReject={notAVideo}
-                    disabled={!tTrack}
-                    testId="student-file"
-                  />
-                  {isPhone && (
-                    <label className={`${solid} w-full ${tTrack ? "cursor-pointer" : "pointer-events-none opacity-40"}`}>
-                      <Camera size={14} /> Record yourself now
-                      <input
-                        type="file"
-                        accept="video/*"
-                        capture="user"
-                        className="sr-only"
-                        disabled={!tTrack}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                          const f = e.target.files?.[0];
-                          e.target.value = "";
-                          if (f) chooseStudent(f);
+              {/* performance */}
+              <Panel
+                kicker="Your performance"
+                title="Your video"
+                status={<Status tone={perfState.tone}>{perfState.text}</Status>}
+              >
+                {!sUrl ? (
+                  <>
+                    <DropZone
+                      className="min-h-[220px]"
+                      icon={<Upload size={20} />}
+                      title="Add your video"
+                      hint="From your gallery, Google Drive or Files · MP4, MOV or WebM"
+                      onFile={chooseStudent}
+                      onReject={notAVideo}
+                      testId="student-file"
+                    />
+                    {isPhone && (
+                      <label className={`${solid} w-full cursor-pointer`}>
+                        <Camera size={14} /> Record yourself now
+                        <input
+                          type="file"
+                          accept="video/*"
+                          capture="user"
+                          className="sr-only"
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = "";
+                            if (f) chooseStudent(f);
+                          }}
+                        />
+                      </label>
+                    )}
+                    {guidelines}
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <VideoPanel
+                        ref={studentRef}
+                        src={sUrl}
+                        track={sTrack}
+                        label={sTrack ? "Performance · traced on this device" : "Performance"}
+                        aspect={sAspect}
+                        onLoaded={(v) => {
+                          setSAspect(v.videoWidth / v.videoHeight);
+                          void resolveDuration(v);
                         }}
                       />
-                    </label>
-                  )}
-                </div>
-                <div className="self-center">{recordingTips}</div>
-              </div>
-            ) : !result ? (
-              <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-10">
-                <div className="min-w-0 space-y-3">
-                  <VideoPanel ref={studentRef} src={sUrl} track={sTrack} label="You" aspect={sAspect} onLoaded={(v) => {
-                      setSAspect(v.videoWidth / v.videoHeight);
-                      void resolveDuration(v);
-                    }}
-                  />
-                  <FileRow name={sName} label="Change video" onFile={chooseStudent} onReject={notAVideo} testId="student-file" disabled={!!busy} />
-                </div>
-                <div className="space-y-6">
-                  {recordingTips}
-                  <button type="button" className={`${solid} w-full py-3`} onClick={analyseStudent} disabled={!!busy || !tTrack} data-testid="analyse-student">
-                    <Sparkles size={14} /> Compare with the teacher
-                  </button>
-                  {busyLine("student")}
-                  {busyLine("analysis")}
-                </div>
-              </div>
-            ) : (
-              <FileRow name={sName} label="Try another video" onFile={chooseStudent} onReject={notAVideo} testId="student-file" disabled={!!busy} />
-            )}
-          </StepPanel>
-
-          {/* ---------------- 3 ---------------- */}
-          <StepPanel
-            n={3}
-            id="step3"
-            title="How it compares"
-            state={stage === 3 ? "current" : "locked"}
-            desc={stage < 3 ? "Both videos side by side, with up to three corrections and a “Show me” for each." : undefined}
-            status={stage < 3 ? <Chip tone="locked">Locked</Chip> : undefined}
-          >
-            {result && tUrl && sUrl ? (
-              <div className="space-y-6" data-testid="results">
-                {alerts}
-                {lesson && sTrack && <LessonNav lesson={lesson} duration={sTrack.range[1]} active={activeStep} onSelect={selectStep} />}
-                <div ref={videosRef} className="grid gap-4 md:grid-cols-2">
-                  <VideoPanel
-                    ref={tPlayRef}
-                    src={tUrl}
-                    track={tTrack}
-                    label="Teacher"
-                    aspect={tAspect}
-                    muted={!teacherSound}
-                    controls={false}
-                    marker={activeTip ? { marker: activeTip.marker, joints: activeTip.marker.teacherJoints ?? activeTip.marker.joints } : null}
-                    onLoaded={(v) => (v.currentTime = result.found ? mapTime(result.map, result.tries[0]?.start ?? 0) : range[0])}
-                  />
-                  <VideoPanel
-                    ref={studentRef}
-                    src={sUrl}
-                    track={sTrack}
-                    label={result.mirrored ? "You (compared mirrored)" : "You"}
-                    aspect={sAspect}
-                    muted={teacherSound}
-                    controls={false}
-                    marker={activeTip ? { marker: activeTip.marker, joints: activeTip.marker.joints } : null}
-                    ghost={ghostInfo}
-                    onLoaded={(v) => {
-                      setSAspect(v.videoWidth / v.videoHeight);
-                      v.currentTime = result.tries[0]?.start ?? 0;
-                    }}
-                  />
-                </div>
-                <div className="flex flex-wrap items-center gap-2 rounded-sm border border-foreground/12 bg-foreground/[0.02] p-2">
-                  <button type="button" className={solid} onClick={playBoth} disabled={!result.found} data-testid="play-both">
-                    {playing ? <Pause size={14} /> : <Play size={14} />} {playing ? "Pause" : "Play both"}
-                  </button>
-                  <label className={`${ghostBtn} ${result.found ? "cursor-pointer" : "opacity-40"}`}>
-                    <input
-                      type="checkbox"
-                      checked={ghost}
-                      onChange={(e) => setGhost(e.target.checked)}
-                      className="accent-[var(--primary)]"
-                      disabled={!result.found}
-                    />
-                    Teacher&apos;s ghost
-                  </label>
-                  <button type="button" className={ghostBtn} onClick={() => setTeacherSound((x) => !x)}>
-                    Sound: {teacherSound ? "teacher's" : "mine"}
-                  </button>
-                  {result.tries.length > 1 && (
-                    <span className="mono ml-auto px-3 text-[10px] uppercase tracking-[0.14em] text-foreground/50">{result.tries.length} tries found</span>
-                  )}
-                </div>
-                <Results result={result} parts={parts} onParts={changeParts} onShowMe={showMe} activeTip={activeTip?.id ?? null} />
-                {busyLine("analysis")}
-                {lesson && (
-                  <LessonGaps lesson={lesson} onWatchClass={(sp) => watchOne("teacher", sp)} onWatchYou={(sp) => watchOne("student", sp)} />
+                      <FileRow name={sName} label="Replace" onFile={chooseStudent} onReject={notAVideo} testId="student-file" disabled={!!busy} />
+                    </div>
+                    {modeSwitch}
+                    <p className="text-[0.85rem] leading-snug text-foreground/55">
+                      {mode === "class"
+                        ? "Each segment of your performance is found wherever it appears in the class video, and checked on its own."
+                        : "The reference segment is found in your video: extra bits, pauses and a different speed are fine."}
+                    </p>
+                    {busyLine("student")}
+                    {guidelines}
+                  </>
                 )}
-                <div className="flex flex-wrap gap-2 border-t border-foreground/10 pt-6">
-                  <FilePick className={solid} label="Try another video of yourself" icon={<Upload size={14} />} onFile={chooseStudent} onReject={notAVideo} />
-                  <button
-                    type="button"
-                    className={ghostBtn}
-                    onClick={() => {
-                      resetAll();
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                    }}
-                  >
-                    <RotateCcw size={14} /> Start again
+              </Panel>
+            </section>
+
+            {/* action bar */}
+            <div className="sticky bottom-3 z-20 mt-5">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-md border border-foreground/12 bg-background/85 px-3 py-2.5 shadow-[0_12px_40px_-16px_rgba(0,0,0,0.55)] backdrop-blur sm:px-4 sm:py-3">
+                <span className="hidden flex-wrap items-center gap-x-5 gap-y-2 sm:flex">
+                  <ReadinessItem label="Reference" state={refState} />
+                  <ReadinessItem label="Performance" state={perfState} />
+                </span>
+                {busy?.who === "analysis" && (
+                  <span className="flex min-w-0 items-center gap-2 text-[0.85rem] text-foreground/70" role="status">
+                    <Loader2 size={14} className="shrink-0 animate-spin text-primary" />
+                    <span className="truncate">{busy.p?.message ?? "Comparing"}</span>
+                  </span>
+                )}
+                <span className="hidden flex-1 sm:block" />
+                {result && editing && (
+                  <button type="button" className={ghostBtn} onClick={() => setEditing(false)} disabled={!!busy}>
+                    Back to report
                   </button>
+                )}
+                <button type="button" className={`${solid} flex-1 px-6 sm:flex-none`} onClick={runAll} disabled={!canRun} data-testid="analyse-student">
+                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Run analysis
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ---------------- report ---------------- */}
+        {showReport && result && tUrl && sUrl && (
+          <section ref={reportRef} className="mt-10 scroll-mt-28 space-y-8" data-testid="results" aria-labelledby="report-title">
+            <div className="flex flex-wrap items-end justify-between gap-5">
+              <div className="space-y-2">
+                <Eyebrow tone="primary">
+                  Analysis report{lesson && lesson.steps.length ? ` · segment ${activeStep + 1} of ${lesson.steps.length}` : ""}
+                </Eyebrow>
+                <h2 id="report-title" className="text-[clamp(1.6rem,3vw,2.2rem)] font-medium leading-tight">
+                  {headline}
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  {result.found && result.timing.text && <MetaChip>{result.timing.text}</MetaChip>}
+                  {result.mirrored && <MetaChip>Compared mirrored</MetaChip>}
+                  {result.found && result.tries.length > 1 && <MetaChip>{result.tries.length} repetitions found</MetaChip>}
                 </div>
               </div>
-            ) : null}
-          </StepPanel>
-        </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {modeSwitch}
+                <FilePick className={ghostBtn} label="New performance" icon={<Upload size={13} />} onFile={chooseStudent} onReject={notAVideo} />
+                <button
+                  type="button"
+                  className={ghostBtn}
+                  onClick={() => {
+                    resetAll();
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                >
+                  <RotateCcw size={13} /> New analysis
+                </button>
+              </div>
+            </div>
 
-        <Rule className="mt-16" />
-        <footer className="mt-8 flex flex-wrap items-center gap-3 text-sm text-foreground/55">
+            {lesson && sTrack && <LessonNav lesson={lesson} duration={sTrack.range[1]} active={activeStep} onSelect={selectStep} />}
+
+            <div className="space-y-3">
+              <div ref={videosRef} className="grid gap-4 md:grid-cols-2">
+                <VideoPanel
+                  ref={tPlayRef}
+                  src={tUrl}
+                  track={tTrack}
+                  label="Reference"
+                  aspect={tAspect}
+                  muted={!teacherSound}
+                  controls={false}
+                  marker={activeTip ? { marker: activeTip.marker, joints: activeTip.marker.teacherJoints ?? activeTip.marker.joints } : null}
+                  onLoaded={(v) => (v.currentTime = result.found ? mapTime(result.map, result.tries[0]?.start ?? 0) : range[0])}
+                />
+                <VideoPanel
+                  ref={studentRef}
+                  src={sUrl}
+                  track={sTrack}
+                  label={result.mirrored ? "Your performance (compared mirrored)" : "Your performance"}
+                  aspect={sAspect}
+                  muted={teacherSound}
+                  controls={false}
+                  marker={activeTip ? { marker: activeTip.marker, joints: activeTip.marker.joints } : null}
+                  ghost={ghostInfo}
+                  onLoaded={(v) => {
+                    setSAspect(v.videoWidth / v.videoHeight);
+                    v.currentTime = result.tries[0]?.start ?? 0;
+                  }}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-foreground/12 bg-foreground/[0.02] p-2">
+                <button type="button" className={solid} onClick={playBoth} disabled={!result.found} data-testid="play-both">
+                  {playing ? <Pause size={14} /> : <Play size={14} />} {playing ? "Pause" : "Play both"}
+                </button>
+                <label className={`${ghostBtn} ${result.found ? "cursor-pointer" : "opacity-40"}`}>
+                  <input
+                    type="checkbox"
+                    checked={ghost}
+                    onChange={(e) => setGhost(e.target.checked)}
+                    className="accent-[var(--primary)]"
+                    disabled={!result.found}
+                  />
+                  Teacher overlay
+                </label>
+                <button type="button" className={ghostBtn} onClick={() => setTeacherSound((x) => !x)}>
+                  Audio: {teacherSound ? "reference" : "yours"}
+                </button>
+              </div>
+            </div>
+
+            <Results result={result} parts={parts} onParts={changeParts} onShowMe={showMe} activeTip={activeTip?.id ?? null} />
+            {busyLine("analysis")}
+            {lesson && <LessonGaps lesson={lesson} onWatchClass={(sp) => watchOne("teacher", sp)} onWatchYou={(sp) => watchOne("student", sp)} />}
+          </section>
+        )}
+
+        <footer className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-foreground/10 pt-6 text-[0.85rem] text-foreground/50">
+          <p className="flex items-start gap-2">
+            <ShieldCheck size={15} className="mt-0.5 shrink-0" />
+            Videos stay on this device. Saved references hold the traced figure only, never video. The first analysis downloads about{" "}
+            {MODEL_DOWNLOAD_MB} MB of models.
+          </p>
           <button
             type="button"
             className={ghostBtn}
@@ -901,12 +941,11 @@ export default function CompareClient() {
               forgetSessionStep();
               setRestored(null);
               setSaved(false);
-              setNote("Saved teacher steps were deleted from this device.");
+              setNote("Saved references were deleted from this device.");
             }}
           >
-            <Trash2 size={14} /> Delete saved steps
+            <Trash2 size={13} /> Delete saved references
           </button>
-          <span>Saved steps hold the stick figure only, never video.</span>
         </footer>
       </div>
     </div>
@@ -917,128 +956,129 @@ export default function CompareClient() {
 /* Page furniture                                                       */
 /* ------------------------------------------------------------------ */
 
-function StepPanel({
-  n,
-  id,
-  title,
-  desc,
-  state,
-  status,
-  children,
-}: {
-  n: number;
-  id: string;
-  title: string;
-  desc?: ReactNode;
-  state: "current" | "done" | "locked";
-  status?: ReactNode;
-  children?: ReactNode;
-}) {
-  const box =
-    state === "current"
-      ? "border-foreground/15 bg-gradient-to-br from-primary/[0.06] via-foreground/[0.01] to-transparent"
-      : state === "done"
-        ? "border-foreground/12 bg-foreground/[0.02]"
-        : "border-foreground/10";
-  const tile =
-    state === "locked" ? "border-foreground/15 text-foreground/35" : "border-primary/20 bg-primary/10 text-primary";
-  return (
-    <section aria-labelledby={id} className={`rounded-sm border p-5 sm:p-8 ${box}`}>
-      <div className="flex items-start gap-4">
-        <span className={`mono grid h-10 w-10 shrink-0 place-items-center rounded-sm border text-sm ${tile}`}>
-          {state === "done" ? <Check size={16} strokeWidth={2.5} /> : `0${n}`}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-3">
-            <p className="mono text-[10px] uppercase tracking-[0.2em] text-foreground/45">Step {n}</p>
-            {status}
-          </div>
-          <h2 id={id} className={`serif mt-1 text-[1.6rem] leading-tight ${state === "locked" ? "text-foreground/50" : ""}`}>
-            {title}
-          </h2>
-          {desc && <p className="serif mt-1.5 max-w-[60ch] text-[1rem] leading-relaxed text-foreground/55">{desc}</p>}
-        </div>
-      </div>
-      {children ? <div className="mt-6 sm:mt-8">{children}</div> : null}
-    </section>
-  );
+type Tone = "empty" | "idle" | "busy" | "ready";
+interface Readiness {
+  tone: Tone;
+  text: string;
 }
 
-function ModeOption({
-  active,
-  title,
-  children,
-  onClick,
-  disabled,
-  testId,
-}: {
-  active: boolean;
-  title: string;
-  children: ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  testId?: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={active}
-      onClick={onClick}
-      disabled={disabled}
-      data-testid={testId}
-      className={`flex items-start gap-3 rounded-sm border px-4 py-3 text-left transition-colors disabled:opacity-50 ${
-        active ? "border-primary bg-primary/[0.07]" : "border-foreground/12 hover:border-primary/50"
-      }`}
-    >
-      <span className={`mt-1 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border ${active ? "border-primary" : "border-foreground/30"}`}>
-        {active && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
-      </span>
-      <span>
-        <span className="mono block text-[10px] uppercase tracking-[0.16em] text-foreground/85">{title}</span>
-        <span className="serif mt-1 block text-[0.95rem] leading-snug text-foreground/60">{children}</span>
-      </span>
-    </button>
-  );
-}
+const TONE: Record<Tone, string> = {
+  empty: "border-foreground/15 text-foreground/45",
+  idle: "border-foreground/25 text-foreground/70",
+  busy: "border-primary/50 text-primary",
+  ready: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+};
 
-function Chip({ tone, children }: { tone: "ready" | "locked"; children: ReactNode }) {
+function Status({ tone, children, testId }: { tone: Tone; children: ReactNode; testId?: string }) {
   return (
-    <span
-      className={`mono inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[9px] uppercase tracking-[0.16em] ${
-        tone === "ready"
-          ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
-          : "border-foreground/15 text-foreground/40"
-      }`}
-    >
-      {tone === "ready" ? <Check size={11} strokeWidth={3} /> : <Lock size={10} />}
+    <span className={`mono inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] ${TONE[tone]}`} data-testid={testId}>
+      {tone === "ready" ? <Check size={11} strokeWidth={3} /> : tone === "busy" ? <Loader2 size={11} className="animate-spin" /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
       {children}
     </span>
   );
 }
 
-function Fact({ icon, label, value, children }: { icon: ReactNode; label: string; value: string; children: ReactNode }) {
+/** A card of the workspace: a header bar (kicker, title, status) over its content. */
+function Panel({ kicker, title, status, children }: { kicker: string; title: string; status?: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex items-start gap-4">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-sm border border-primary/20 bg-primary/10 text-primary">{icon}</span>
-      <div className="min-w-0">
-        <p className="mono text-[9px] uppercase tracking-[0.18em] text-foreground/45">{label}</p>
-        <p className="mono mt-1 text-[0.95rem] text-foreground">{value}</p>
-        <p className="mt-1 text-[0.82rem] leading-snug text-foreground/50">{children}</p>
-      </div>
+    <section className="flex min-w-0 flex-col rounded-md border border-foreground/12 bg-foreground/[0.02]" aria-label={kicker}>
+      <header className="flex items-center justify-between gap-3 border-b border-foreground/10 px-5 py-3.5">
+        <div className="min-w-0">
+          <p className="mono text-[9px] uppercase tracking-[0.2em] text-primary">{kicker}</p>
+          <h2 className="mt-0.5 truncate text-[1.05rem] font-medium">{title}</h2>
+        </div>
+        {status}
+      </header>
+      <div className="flex-1 space-y-5 p-5">{children}</div>
+    </section>
+  );
+}
+
+function ReadinessItem({ label, state }: { label: string; state: Readiness }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span className="mono text-[9px] uppercase tracking-[0.18em] text-foreground/45">{label}</span>
+      <Status tone={state.tone}>{state.text}</Status>
+    </span>
+  );
+}
+
+function Summary({ label, value, meta }: { label: string; value: string; meta?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="mono text-[9px] uppercase tracking-[0.18em] text-foreground/45">{label}</p>
+      <p className="mt-0.5 max-w-[26ch] truncate text-[0.92rem] text-foreground/85" title={value}>
+        {value}
+        {meta && <span className="mono ml-2 text-[10px] text-foreground/45">{meta}</span>}
+      </p>
     </div>
   );
 }
 
-function Hint({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+function MetaChip({ children }: { children: ReactNode }) {
+  return <span className="rounded-full border border-foreground/15 px-3 py-1 text-[0.8rem] text-foreground/65">{children}</span>;
+}
+
+function Feature({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
     <li className="flex items-start gap-3.5">
-      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-sm border border-foreground/12 text-primary">{icon}</span>
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-primary/20 bg-primary/10 text-primary">{icon}</span>
       <div>
-        <p className="mono text-[10px] uppercase tracking-[0.16em] text-foreground/80">{title}</p>
-        <p className="serif mt-1 text-[0.98rem] leading-relaxed text-foreground/60">{children}</p>
+        <p className="text-[0.95rem] font-medium text-foreground">{title}</p>
+        <p className="mt-0.5 text-[0.85rem] leading-snug text-foreground/55">{children}</p>
       </div>
     </li>
+  );
+}
+
+function Guideline({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <li className="flex items-start gap-2.5 rounded-md border border-foreground/10 px-3 py-2.5">
+      <span className="mt-0.5 shrink-0 text-primary">{icon}</span>
+      <span>
+        <span className="block text-[0.85rem] font-medium text-foreground/85">{title}</span>
+        <span className="block text-[0.8rem] leading-snug text-foreground/50">{children}</span>
+      </span>
+    </li>
+  );
+}
+
+/** A two-way switch, as a row of buttons (radio semantics). */
+function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string; testId?: string }[];
+  onChange: (v: T) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="inline-flex min-w-0 flex-col gap-1.5">
+      <span className="mono text-[9px] uppercase tracking-[0.18em] text-foreground/45">{label}</span>
+      <div className="inline-flex rounded-full border border-foreground/15 p-0.5" role="radiogroup" aria-label={label}>
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            disabled={disabled}
+            data-testid={o.testId}
+            onClick={() => value !== o.value && onChange(o.value)}
+            className={`mono rounded-full px-3.5 py-1.5 text-[10px] uppercase tracking-[0.12em] transition-colors disabled:opacity-50 ${
+              value === o.value ? "bg-primary text-white dark:text-black" : "text-foreground/65 hover:text-primary"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

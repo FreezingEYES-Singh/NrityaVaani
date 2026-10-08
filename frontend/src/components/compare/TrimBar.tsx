@@ -194,7 +194,7 @@ export default function TrimBar({ video, getVideo, duration, range, onChange, di
   return (
     <div className="space-y-4" role="group" aria-label="Mark the step">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="mono text-[10px] uppercase tracking-[0.18em] text-foreground/55">Mark the part to compare</p>
+        <p className="mono text-[10px] uppercase tracking-[0.18em] text-foreground/55">Reference segment</p>
         <p className="mono text-[11px] tabular-nums">
           <span className="text-foreground">{fmtLen(len)}</span>
           <span className="text-foreground/40"> selected</span>
@@ -258,7 +258,7 @@ export default function TrimBar({ video, getVideo, duration, range, onChange, di
         <Info size={14} className="mt-0.5 shrink-0" />
         {long
           ? "A long part takes about as long to prepare as it plays, and needs more memory. Fine on a computer; an older phone may struggle."
-          : "One step or the whole dance, from 2 s. Play or scrub the video, then set the start and end, or drag the handles."}
+          : "A single movement or the whole class, from 2 s. Scrub the video, then set the start and end, or drag the handles."}
       </p>
     </div>
   );

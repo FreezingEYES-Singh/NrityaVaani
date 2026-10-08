@@ -46,7 +46,7 @@ export function LessonNav({
   return (
     <div className="space-y-4" data-testid="lesson-steps">
       <p className="mono text-[10px] uppercase tracking-[0.18em] text-foreground/55">
-        {n ? `Found ${n} step${n > 1 ? "s" : ""} from the class in your video` : "No steps from the class found in your video"}
+        {n ? `${n} segment${n > 1 ? "s" : ""} of your performance found in the class` : "No segment of your performance was found in the class"}
       </p>
       {n > 0 && (
         <>
@@ -86,7 +86,7 @@ export function LessonNav({
                     i === active ? "border-primary bg-primary/[0.07]" : "border-foreground/12 hover:border-primary/50"
                   }`}
                 >
-                  <span className="mono block text-[10px] uppercase tracking-[0.16em] text-foreground/80">Step {i + 1}</span>
+                  <span className="mono block text-[10px] uppercase tracking-[0.16em] text-foreground/80">Segment {i + 1}</span>
                   <span className="mono mt-1 block text-[10px] text-foreground/55">
                     You {span(s.student)} · class {span(s.teacher)}
                   </span>
