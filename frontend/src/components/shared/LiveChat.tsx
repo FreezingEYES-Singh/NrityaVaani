@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Bot, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 interface ChatMessage {
   id: string;
@@ -37,6 +38,7 @@ export default function LiveChat() {
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -61,6 +63,9 @@ export default function LiveChat() {
       setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), sender: 'bot', text: faq.response }]);
     }, 1500);
   };
+
+  // Hidden on /compare: on a phone the bubble covers the stacked video panes.
+  if (pathname?.startsWith('/compare')) return null;
 
   return (
     <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-[100]">

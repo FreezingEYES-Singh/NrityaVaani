@@ -76,11 +76,9 @@ export default function PracticeHubPage() {
     if (unmasteredBeginner) return { mudra: unmasteredBeginner, reason: 'Foundation step to master' };
 
     // 2. Practiced mudra with accuracy < 85% needing polish
-    for (const m of MUDRAS) {
-      const score = mudraScores.get(m.slug);
-      if (score !== undefined && score < 85) {
-        return { mudra: m, reason: `Improve your ${score}% score` };
-      }
+    const needsPolish = MUDRAS.find((m) => (mudraScores.get(m.slug) ?? 100) < 85);
+    if (needsPolish) {
+      return { mudra: needsPolish, reason: `Improve your ${mudraScores.get(needsPolish.slug)}% score` };
     }
 
     // 3. First untouched mudra
