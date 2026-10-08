@@ -34,7 +34,6 @@ frontend/
 │   │   ├── learn/          # 3D Natya Shala lesson player with dual-gender rigs
 │   │   ├── library/        # Interactive 3D encyclopedia for 28 classical mudras
 │   │   ├── live/           # Real-time webcam 60 FPS mudra classifier
-│   │   ├── mocap/          # Full-body motion capture & bone jitter filtering
 │   │   ├── practice/       # Target posture scoring & streak tracking
 │   │   └── upload/         # Client-side static photo gesture analysis
 │   │
@@ -47,7 +46,7 @@ frontend/
 │       ├── constants/      # Mudra definitions, poses & dance metadata
 │       ├── lesson/         # Lesson manifests, translation dictionaries
 │       ├── mediapipe/      # Hand landmark tracking & kinematic classifiers
-│       ├── motion/         # Skeletal smoothing, collision detection & codecs
+│       ├── motion/         # Skeletal smoothing & pose/clip codecs
 │       └── voice/          # Goonj Audio Engine & 15 Guru Personas
 │
 ├── next.config.ts          # Turbopack, rewrites & API backend proxies
