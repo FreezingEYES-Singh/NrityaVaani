@@ -74,11 +74,10 @@ interface Props {
   /** Called with the recording, as a video file. */
   onFile: (f: File) => void;
   disabled?: boolean;
-  /** Whose video this is, for the wording. */
-  who: "teacher" | "student";
 }
 
-export default function YouTubeCapture({ onFile, disabled, who }: Props) {
+/** The teacher's video only: the student's own video is always a file from their device. */
+export default function YouTubeCapture({ onFile, disabled }: Props) {
   const [link, setLink] = useState("");
   const [id, setId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -225,7 +224,7 @@ export default function YouTubeCapture({ onFile, disabled, who }: Props) {
             onChange={(e) => setLink(e.target.value)}
             disabled={disabled}
             aria-label="YouTube link"
-            data-testid={`${who}-youtube-link`}
+            data-testid="teacher-youtube-link"
           />
           <button type="submit" className={`${pill} border border-foreground/20 text-foreground/75 hover:border-primary/60 hover:text-primary`} disabled={disabled || !link.trim()}>
             Load video
@@ -285,7 +284,7 @@ export default function YouTubeCapture({ onFile, disabled, who }: Props) {
                 )}
               </div>
               <p className="serif text-[0.95rem] leading-relaxed text-foreground/60">
-                Play the video to just before the {who === "teacher" ? "step" : "part"}, then tap <strong className="font-semibold text-foreground">Record from here</strong>{" "}
+                Play the video to just before the part you need, then tap <strong className="font-semibold text-foreground">Record from here</strong>{" "}
                 and choose <strong className="font-semibold text-foreground">This tab</strong> when the browser asks. Tap Stop when it&apos;s done; you can
                 trim it next. Keep this tab in front and don&apos;t scroll while it records. The recording stays on this device.
               </p>

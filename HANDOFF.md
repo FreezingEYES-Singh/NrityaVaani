@@ -10,6 +10,15 @@ Read this file first. §0 is the latest state: **Phase 1 of the video-compare fe
 
 ---
 
+## 0b. Session 4, part 2 (2026-10-08): hands, class mode, YouTube for the teacher only
+
+The owner asked: YouTube only for the teacher's video (the student uploads); why only the body and not the hands; and what happens with a 10-minute YouTube class and a 1-minute student dance of all its steps.
+
+- **YouTube:** teacher only (`YouTubeCapture` in step 1). The student's drop zone says gallery, Google Drive or Files (the phone's picker already offers them).
+- **Hands** (`extract.ts`, `hands.ts`, `VideoPanel.tsx`): a HandLandmarker per side (VIDEO mode) runs on a square cut from the full-size frame around each wrist, placed and sized from the pose (forearm and torso), up to 15 times a second; frames get `hands: { l, r }` (21 points, image + world). Drawn with the head (ears-eyes-nose, mouth, a ring). `judgeHands()` compares finger straightness (the site's `getFingerExtensionScore`, world landmarks) along the body's time map, mirror-aware, names mudras with the site's `classifyMudra` (palm scaled to 0.1), and adds one hand tip after the body tips plus a Hands band; "Hands" switch in the parts. Too small or hidden in most frames: not checked, with a note. Model download is now 29 MB.
+- **Class mode** (`analyzeLesson()` in `analyze.ts`, `LessonSteps.tsx`): step 2 asks "What's in your video?" (the marked part / several steps from the class; the default is class mode when the marked part is >= 45 s). Every 4 s window of the student's dancing (every 2 s) is located in the class video: movement windows by the usual search with roles swapped (the class's talking is cut as pauses; every demonstration is a candidate), footwork-in-place/squat windows by movement then posture, holds by posture; plain standing is skipped. A Viterbi pass picks one candidate per window, keeping neighbours in the same demonstration; runs become steps (split every ~12 s), each judged by the normal movement/posture code (tips, bands, timing, hands, map). Also listed: the student's dancing found nowhere, and class dancing (legs/torso/hips moving, or a dance posture; not arm gestures while talking) not in the student's video and not a repeat of something danced. Tests: `lesson.test.ts` (synthetic class with talking, a slow demo, repeats; skipping a step; the class against itself; walking).
+- **Known limits:** footwork patterns aren't compared, so steps in the same posture (two Thattadavu variations) can be matched to each other's demonstration and aren't listed as missed (the page says so). Hand shapes from small hands in full-body videos are noisy; tips need a difference in >= 40% of the paired frames.
+
 ## 0a. Session 4 (2026-10-08): `/compare` page redesign
 
 The owner said the page "ain't looking good", asked for steps longer than 1 minute ("it depends on him") and for YouTube links. This session (branch `claude/magical-darwin-9udatz`) redesigned the page, removed the length limit and added YouTube recording. The analysis and extraction code are untouched.
