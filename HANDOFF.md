@@ -1,6 +1,6 @@
 # Handoff: session notes for the next Claude session
 
-**Branch:** `claude/nifty-mendel-34y2is`. It contains `claude/relaxed-fermat-ctr4u2` (design revision 5) and `claude/blissful-lovelace-305wig`. `main` is untouched, and no PR is open yet.
+**Branch:** `claude/nifty-mendel-34y2is`. It contains `claude/relaxed-fermat-ctr4u2` (design revision 5) and `claude/blissful-lovelace-305wig`. On 2026-10-08 the user asked for it to go live, so it was merged into `main` through a pull request; Netlify deploys `main` to https://nrityavaani-ai.netlify.app.
 **Last updated:** 2026-10-08
 
 Read this file first. §0 is the latest state: **Phase 1 of the video-compare feature is built.** §1–4 are the earlier sessions' notes.
