@@ -111,6 +111,11 @@ export interface PoseTrack {
   effectiveFps: number;
   /** Warnings collected during extraction (e.g. second person present). Plain sentences. */
   warnings: string[];
+  /**
+   * Whether the hand pass ran (false when the hand model couldn't load). Missing on
+   * tracks made before hands were tracked: those are prepared again, not reused.
+   */
+  handPass?: boolean;
 }
 
 /** Body-part switches the user controls. A part that is off is neither aligned on nor judged. */

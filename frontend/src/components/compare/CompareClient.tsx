@@ -72,6 +72,9 @@ type Busy = null | { who: "teacher" | "student" | "analysis" | "suggest"; p: Ext
 
 const fmtEta = (s: number | null) => (s === null ? "" : s > 90 ? `about ${Math.round(s / 60)} min left` : `about ${Math.max(1, Math.round(s))} s left`);
 
+/** A saved teacher step made by this version of the extractor (with the hand pass), so it can be reused. */
+const isCurrent = (t: PoseTrack) => t.handPass !== undefined;
+
 /** A marked teacher part at least this long suggests a class video: the dance is compared step by step. */
 const CLASS_MODE_FROM = 45;
 
@@ -201,7 +204,7 @@ export default function CompareClient() {
     if (!key) return;
     loadTeacherStep(key)
       .then((t) => {
-        if (t) setRestored(t);
+        if (t && isCurrent(t)) setRestored(t);
       })
       .catch(() => undefined);
   }, []);
@@ -265,8 +268,9 @@ export default function CompareClient() {
       try {
         const key = await fingerprint(tFile, range, v);
         let t: PoseTrack | null = null;
-        if (restored && key === sessionStepKey()) t = restored;
-        if (!t) t = await loadTeacherStep(key).catch(() => null);
+        // a step saved before hands were tracked is prepared again, so it has the fingers
+        if (restored && key === sessionStepKey() && isCurrent(restored)) t = restored;
+        if (!t) t = await loadTeacherStep(key).then((x) => (x && isCurrent(x) ? x : null)).catch(() => null);
         if (t) setNote("This step was already prepared on this device, so it wasn't processed again.");
         if (!t) {
           setBusy({ who: "teacher", p: null });

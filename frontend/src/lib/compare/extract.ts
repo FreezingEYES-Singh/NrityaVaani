@@ -552,6 +552,7 @@ async function extractNow(video: VideoWithRvfc, range: [number, number], opts: E
     range: [start, end],
     effectiveFps: frames.length / span,
     warnings,
+    handPass: handFrames > 0,
   };
 }
 
