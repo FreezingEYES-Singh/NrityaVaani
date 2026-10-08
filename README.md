@@ -32,6 +32,7 @@
 * **Live Mudra Recognition (`/live`)**: Real-time 21-point 3D hand tracking at 60 FPS identifying Asamyukta (single-hand) and Samyukta (double-hand) classical mudras on-device.
 * **Targeted Practice Coach (`/practice`)**: Real-time posture scoring against target gestures with interactive feedback, hold timers, and streak tracking.
 * **Interactive 3D Mudra Encyclopedia (`/library`)**: 3D reference library covering 28 classical mudras with step-by-step instructions, viniyoga (usages), and common mistake corrections.
+* **3D Motion Capture Lab (`/mocap`)**: In-browser full-body motion capture, bone jitter filtering, and real-time retargeting to 3D skinned models.
 * **Photograph Analysis (`/upload`)**: Single-image gesture analysis running client-side with instant accuracy feedback.
 * **Private by Design (`/privacy`)**: Zero camera feed transmission. All computer vision inference executes locally via Google MediaPipe Tasks-Vision.
 
@@ -185,7 +186,7 @@ NrityaVaani/
 │   ├── scripts/
 │   │   └── build-mudra-poses.mjs  # Kinematic solver generating mudraPoses.json
 │   ├── src/
-│   │   ├── app/                   # App Router pages (/live, /learn, /library, /practice)
+│   │   ├── app/                   # App Router pages (/live, /learn, /library, /mocap)
 │   │   ├── components/            # UI components, 3D Natya Shala stages & canvas rigs
 │   │   └── lib/                   # Motion classification, MediaPipe, voice engines
 │   ├── next.config.ts             # API rewrites & backend proxy routing

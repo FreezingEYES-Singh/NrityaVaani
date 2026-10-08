@@ -7,6 +7,7 @@ const PLATFORM = [
   { href: "/learn", label: "Interactive lessons" },
   { href: "/library", label: "Pose library" },
   { href: "/upload", label: "Upload analysis" },
+  { href: "/mocap", label: "Mocap studio" },
   { href: "/research", label: "Research" },
 ];
 

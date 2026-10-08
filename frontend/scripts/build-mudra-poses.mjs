@@ -204,6 +204,10 @@ const rad = (d) => (d * Math.PI) / 180;
 
 /** A finger held straight still carries a little residual flex. */
 const STRAIGHT = [5, 5, 5];
+/** Folded down onto the palm, at the top of each joint's real range. */
+const FOLDED = [85, 100, 55];
+/** Curled but not closed, as in the lotus. */
+const CUPPED = [22, 26, 16];
 
 /**
  * Walks one digit out from its anchor.

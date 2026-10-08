@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft, ShieldCheck, Cpu, HardDrive, EyeOff } from "lucide-react";
 import { Eyebrow, FactStrip, Headline, Mark, Prose, Rule } from "@/components/ui/editorial";
-import DeleteSavedSteps from "@/components/compare/DeleteSavedSteps";
 
 export const metadata: Metadata = {
   title: "Privacy | NrityaVaani",
@@ -18,7 +17,7 @@ const PILLARS = [
   {
     icon: EyeOff,
     title: "No Recording or Surveillance",
-    desc: "Nothing is recorded unless you choose to, and recordings never leave your device. Your camera stream exists only in volatile memory while the live session is active. Closing or navigating away from the page immediately releases the camera hardware and clears the buffer.",
+    desc: "Your camera stream exists only in volatile memory while the live session is active. Closing or navigating away from the page immediately releases the camera hardware and clears the buffer.",
   },
   {
     icon: HardDrive,
@@ -91,31 +90,6 @@ export default function PrivacyPage() {
             );
           })}
         </div>
-
-        <Rule className="my-14" />
-
-        <section>
-          <Eyebrow tone="primary">compare with teacher</Eyebrow>
-          <h2 className="serif text-[1.8rem] leading-tight mt-3">Videos you use in Compare</h2>
-          <Prose className="mt-4">
-            <p>
-              Videos you use in Compare are processed on this device and never uploaded. NrityaVaani never saves your own
-              videos. If you record with your phone&apos;s camera, the camera app may keep its own copy in your gallery;
-              delete it there if you want.
-            </p>
-            <p>
-              A teacher step you mark is kept for the session (so a reload doesn&apos;t lose it) and then deleted, unless
-              you tap &ldquo;Save this teacher step&rdquo;. Only the stick figure is kept, never video.
-            </p>
-            <p>
-              Model files are downloaded from Google when you use the camera or video features (the Live and Upload pages
-              also load their runtime from jsDelivr); no video or images are sent.
-            </p>
-          </Prose>
-          <div className="mt-5">
-            <DeleteSavedSteps />
-          </div>
-        </section>
 
         <Rule className="my-14" />
 

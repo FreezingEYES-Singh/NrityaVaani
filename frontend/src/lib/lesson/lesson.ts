@@ -131,7 +131,7 @@ export function normaliseLesson(lesson: Lesson): Lesson {
 }
 
 // ---------------------------------------------------------------------------
-// Store — IndexedDB
+// Store — IndexedDB, the same reasoning as `clipStore`
 // ---------------------------------------------------------------------------
 
 const DB = "nrityavaani-lessons";
