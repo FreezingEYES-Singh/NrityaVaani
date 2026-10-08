@@ -120,6 +120,8 @@ export interface Band {
 export interface JointMarker {
   /** Landmark indices to highlight (the limb is drawn thick, the end joint gets a ring). */
   joints: number[];
+  /** The same joints on the teacher (they differ from `joints` when the student was compared mirrored). */
+  teacherJoints?: number[];
   /**
    * Direction the student should move the end joint, in image units (x right,
    * y down), roughly unit length. Null when there's no meaningful direction.
@@ -220,18 +222,19 @@ export interface ExtractProgress {
 }
 
 /** Raised by extract.ts with a user-facing message. */
+export type ExtractErrorCode =
+  | "model-failed"
+  | "codec"
+  | "no-person"
+  | "aborted"
+  | "playback-blocked"
+  | "too-short";
+
 export class ExtractError extends Error {
-  constructor(
-    public readonly code:
-      | "model-failed"
-      | "codec"
-      | "no-person"
-      | "aborted"
-      | "playback-blocked"
-      | "too-short",
-    message: string,
-  ) {
+  readonly code: ExtractErrorCode;
+  constructor(code: ExtractErrorCode, message: string) {
     super(message);
+    this.code = code;
     this.name = "ExtractError";
   }
 }

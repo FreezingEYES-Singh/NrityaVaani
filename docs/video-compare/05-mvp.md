@@ -386,6 +386,24 @@ Each step is checked before the next.
 - a small child at 3 m standing still → no bobbing or pause errors;
 - 5° camera roll → no tilt tip.
 
+**Step 1 status (built):** `src/lib/compare/{features,align,feedback,tips.en,analyze,math}.ts`, with the suite in `testing/` (`npm run test:compare`; table view: `node --experimental-strip-types src/lib/compare/testing/run.ts`, any seed with `SEED=n`). 107 of 108 cases pass on 8 noise seeds; the one known limit is listed below. Changes from the rules above, each found by the suite:
+
+| Rule | Changed to | Why |
+|---|---|---|
+| Real-movement test: cost ≤ 0.7 × frozen cost | ... **or** the same test with each side's median pose taken out ≤ 0.75 (≤ 1.0 in the reverse search) | A constant pose error (shallow knees, an arm held low) raises both costs, so slow beginners and partial takes with a pose error failed. Negatives score ≥ 0.94 on the new test, correct takes 0.25–0.61. |
+| Pause cut: still run far from every teacher frame | Also cut a run the teacher only *passes through* (never holds ≥ 1 s) when the first match stretches it ≥ 2.5× (and ≥ 1.8× your own pace elsewhere). Teacher runs at the selection edge, or held elsewhere in the step, are never cut | W starts, swaps and ends standing, so a mid-step pause in that pose was never cut; standing where the teacher moves ("one arm never raised") must not be cut |
+| Mirror: velocities decide, tie → normal | First the offset-free movement test (30% win), then cost (10%), then velocities (10%), then tie | Velocities from two different matched spans aren't comparable |
+| Tries: each ≤ 1.5 × the best | ... the best *candidate*, accepted or not; a try must be ≥ 50% real (unmasked, non-transition) frames | A rejected frozen match let a poor walk-in through; neutral cells are cheap |
+| Neutral / masked cells: one neutral cost | Teacher-side rows: the typical good-match cost; your columns: halfway between the row's best and median | A cheap neutral column let the match route a missing arm raise through a transition |
+| Transitions around a cut pause: unscored (yours) | Unscored on both sides; speed and range use pairs scored on both sides | The teacher's transition frames were scored against your aramandi |
+| Range of movement: yours < 0.7 × the teacher's | < 0.75, both ranges with each video's noise taken out | The spec's own example (a 70% raise gets a tip) |
+| A phase fails beyond the tolerance | ... by 2 standard errors of that video's measured feature noise | False tips at 3–4× noise |
+| Bobbing: your spread vs the teacher's + max(0.03, 3 × jitter) | Spread of (yours − the teacher's) smoothed hip height along the match vs 0.5 × the teacher's spread + max(0.03, 3 × both videos' jitter) | Settling into the position and the teacher's own dips read as bobbing |
+| "Part moving": raw energy vs 2 × noise | Energy over 1/3 s, noise taken out in quadrature, teacher moves the part at ≥ 1.5 × noise | Stamps were below 2 × noise at 1 × noise |
+| Legs tips by severity | Within a part: roll-in, then knee depth (its wording covers "knees out"), then range tips, then the rest | "Open your knees" outranked "sit lower" for shallow beginners |
+
+Test changes: the partial case uses an arm 20° low (15° is exactly the tolerance). **Known limit:** "W 40% partial" reads as the full step with an arm tip: an arms-only step that starts and ends standing can't tell "stopped after 40%" from "never raised the second arm".
+
 **2. Extraction:** `extract.ts`, `identity.ts`, `queue.ts`, `VideoPanel`. Skeleton on uploaded videos in headless Chromium (CPU delegate set explicitly; it is a smoke test, not a calibration). Then an iPhone and an Android 14+ phone: Low Power Mode, an HEVC `.mov`, a portrait video, the camera handoff.
 
 **3. The `/compare` page:** trim, progress, results, Show me, switches, sync play, save/delete, Navbar, LiveChat hide, privacy lines, back/forward-cache reset.
